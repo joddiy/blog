@@ -3,11 +3,11 @@
   <title>Jz Blog</title>
   
   <subtitle>Trivias</subtitle>
-  <link href="/blog/atom.xml" rel="self"/>
+  <link href="/atom.xml" rel="self"/>
   
-  <link href="http://joddiy.github.io/blog/"/>
+  <link href="http://joddiy.github.io/"/>
   <updated>2020-05-07T12:08:00.964Z</updated>
-  <id>http://joddiy.github.io/blog/</id>
+  <id>http://joddiy.github.io/</id>
   
   <author>
     <name>Joddiy Zhang</name>
@@ -18,8 +18,8 @@
   
   <entry>
     <title>Dynamic Malware Detection Research</title>
-    <link href="http://joddiy.github.io/blog/2018/12/18/dynamic-malware-research/"/>
-    <id>http://joddiy.github.io/blog/2018/12/18/dynamic-malware-research/</id>
+    <link href="http://joddiy.github.io/2018/12/18/dynamic-malware-research/"/>
+    <id>http://joddiy.github.io/2018/12/18/dynamic-malware-research/</id>
     <published>2018-12-18T03:20:01.000Z</published>
     <updated>2020-05-07T12:08:00.964Z</updated>
     
@@ -32,17 +32,17 @@
     </summary>
     
     
-      <category term="Research" scheme="http://joddiy.github.io/blog/categories/Research/"/>
+      <category term="Research" scheme="http://joddiy.github.io/categories/Research/"/>
     
     
-      <category term="Malware Detection" scheme="http://joddiy.github.io/blog/tags/Malware-Detection/"/>
+      <category term="Malware Detection" scheme="http://joddiy.github.io/tags/Malware-Detection/"/>
     
   </entry>
   
   <entry>
     <title>Hello World</title>
-    <link href="http://joddiy.github.io/blog/2000/01/01/hello-world/"/>
-    <id>http://joddiy.github.io/blog/2000/01/01/hello-world/</id>
+    <link href="http://joddiy.github.io/2000/01/01/hello-world/"/>
+    <id>http://joddiy.github.io/2000/01/01/hello-world/</id>
     <published>1999-12-31T16:00:00.000Z</published>
     <updated>2020-05-07T12:28:14.976Z</updated>
     

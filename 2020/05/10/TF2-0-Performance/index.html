@@ -6,7 +6,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="generator" content="Jz Blog">
-    <title>TensorFlow graph optimization with Grappler - Jz Blog</title>
+    <title>Better performance with tf.function - Jz Blog</title>
     <meta name="author" content="Joddiy Zhang">
     
     
@@ -17,16 +17,16 @@
             <link rel="alternate" type="application/atom+xml" title="RSS" href="/atom.xml">
         
     
-    <script type="application/ld+json">{"@context":"http://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"Joddiy Zhang","sameAs":["https://github.com/joddiy","https://www.linkedin.com/profile/"],"image":"14108933.jpeg"},"articleBody":"","dateCreated":"2020-05-09T17:51:56+08:00","dateModified":"2020-05-09T21:00:32+08:00","datePublished":"2020-05-09T17:51:56+08:00","description":"Study notes of Tensorflow 2.0","headline":"TensorFlow graph optimization with Grappler","image":["https://www.tensorflow.org/site-assets/images/marketing/learn/learn-hero.svg?dcb_=0.81293176803183","https://www.analyticsindiamag.com/wp-content/uploads/2019/03/tfk1.png"],"mainEntityOfPage":{"@type":"WebPage","@id":"https://joddiy.github.io/2020/05/09/TensorFlow-graph-optimization-with-Grappler/"},"publisher":{"@type":"Organization","name":"Joddiy Zhang","sameAs":["https://github.com/joddiy","https://www.linkedin.com/profile/"],"image":"14108933.jpeg","logo":{"@type":"ImageObject","url":"14108933.jpeg"}},"url":"https://joddiy.github.io/2020/05/09/TensorFlow-graph-optimization-with-Grappler/","keywords":"Tensorflow, Deep Learning, Tools","thumbnailUrl":"https://www.tensorflow.org/site-assets/images/marketing/learn/learn-hero.svg?dcb_=0.81293176803183"}</script>
+    <script type="application/ld+json">{"@context":"http://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"Joddiy Zhang","sameAs":["https://github.com/joddiy","https://www.linkedin.com/profile/"],"image":"14108933.jpeg"},"articleBody":"","dateCreated":"2020-05-10T00:00:00+08:00","dateModified":"2020-05-10T05:28:51+08:00","datePublished":"2020-05-10T00:00:00+08:00","description":"Study notes of Tensorflow 2.0","headline":"Better performance with tf.function","image":["https://www.tensorflow.org/site-assets/images/marketing/learn/learn-hero.svg?dcb_=0.81293176803183","https://www.analyticsindiamag.com/wp-content/uploads/2019/03/tfk1.png"],"mainEntityOfPage":{"@type":"WebPage","@id":"https://joddiy.github.io/2020/05/10/TF2-0-Performance/"},"publisher":{"@type":"Organization","name":"Joddiy Zhang","sameAs":["https://github.com/joddiy","https://www.linkedin.com/profile/"],"image":"14108933.jpeg","logo":{"@type":"ImageObject","url":"14108933.jpeg"}},"url":"https://joddiy.github.io/2020/05/10/TF2-0-Performance/","keywords":"Tensorflow, Deep Learning, Tools","thumbnailUrl":"https://www.tensorflow.org/site-assets/images/marketing/learn/learn-hero.svg?dcb_=0.81293176803183"}</script>
     <meta name="description" content="Study notes of Tensorflow 2.0">
 <meta property="og:type" content="blog">
-<meta property="og:title" content="TensorFlow graph optimization with Grappler">
-<meta property="og:url" content="https://joddiy.github.io/2020/05/09/TensorFlow-graph-optimization-with-Grappler/index.html">
+<meta property="og:title" content="Better performance with tf.function">
+<meta property="og:url" content="https://joddiy.github.io/2020/05/10/TF2-0-Performance/index.html">
 <meta property="og:site_name" content="Jz Blog">
 <meta property="og:description" content="Study notes of Tensorflow 2.0">
 <meta property="og:locale" content="en_US">
-<meta property="article:published_time" content="2020-05-09T09:51:56.000Z">
-<meta property="article:modified_time" content="2020-05-09T13:00:32.825Z">
+<meta property="article:published_time" content="2020-05-09T16:00:00.000Z">
+<meta property="article:modified_time" content="2020-05-09T21:28:51.087Z">
 <meta property="article:author" content="Joddiy Zhang">
 <meta property="article:tag" content="Tensorflow">
 <meta property="article:tag" content="Deep Learning">
@@ -292,14 +292,14 @@
                 <div class="post-header main-content-wrap text-center">
     
         <h1 class="post-title">
-            TensorFlow graph optimization with Grappler
+            Better performance with tf.function
         </h1>
     
     
         <div class="post-meta">
-    <time datetime="2020-05-09T17:51:56+08:00">
+    <time datetime="2020-05-10T00:00:00+08:00">
 	
-		    May 09, 2020
+		    May 10, 2020
     	
     </time>
     
@@ -362,9 +362,9 @@
                     
                 <a
                     class="post-action-btn btn btn--default tooltip--top"
-                    href="/2020/05/09/Better-performance-with-tf-function/"
-                    data-tooltip="Better performance with tf.function"
-                    aria-label="NEXT: Better performance with tf.function"
+                    href="/2020/05/09/TF2-0-Accelerators/"
+                    data-tooltip="Distributed training with TensorFlow"
+                    aria-label="NEXT: Distributed training with TensorFlow"
                 >
                     
                         <span class="hide-xs hide-sm text-small icon-mr">NEXT</span>
@@ -389,7 +389,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.github.io/2020/05/09/TensorFlow-graph-optimization-with-Grappler/"
+                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.github.io/2020/05/10/TF2-0-Performance/"
                     title="Share on Facebook"
                     aria-label="Share on Facebook"
                 >
@@ -402,7 +402,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://twitter.com/intent/tweet?text=https://joddiy.github.io/2020/05/09/TensorFlow-graph-optimization-with-Grappler/"
+                    target="new" href="https://twitter.com/intent/tweet?text=https://joddiy.github.io/2020/05/10/TF2-0-Performance/"
                     title="Share on Twitter"
                     aria-label="Share on Twitter"
                 >
@@ -415,7 +415,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://plus.google.com/share?url=https://joddiy.github.io/2020/05/09/TensorFlow-graph-optimization-with-Grappler/"
+                    target="new" href="https://plus.google.com/share?url=https://joddiy.github.io/2020/05/10/TF2-0-Performance/"
                     title="Share on Google+"
                     aria-label="Share on Google+"
                 >
@@ -428,7 +428,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://www.linkedin.com/shareArticle?mini=true&amp;url=https://joddiy.github.io/2020/05/09/TensorFlow-graph-optimization-with-Grappler/"
+                    target="new" href="https://www.linkedin.com/shareArticle?mini=true&amp;url=https://joddiy.github.io/2020/05/10/TF2-0-Performance/"
                     title="global.share_on_linkedin"
                     aria-label="global.share_on_linkedin"
                 >
@@ -441,7 +441,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="http://service.weibo.com/share/share.php?&amp;title=https://joddiy.github.io/2020/05/09/TensorFlow-graph-optimization-with-Grappler/"
+                    target="new" href="http://service.weibo.com/share/share.php?&amp;title=https://joddiy.github.io/2020/05/10/TF2-0-Performance/"
                     title="Share on Weibo"
                     aria-label="Share on Weibo"
                 >
@@ -513,9 +513,9 @@
                     
                 <a
                     class="post-action-btn btn btn--default tooltip--top"
-                    href="/2020/05/09/Better-performance-with-tf-function/"
-                    data-tooltip="Better performance with tf.function"
-                    aria-label="NEXT: Better performance with tf.function"
+                    href="/2020/05/09/TF2-0-Accelerators/"
+                    data-tooltip="Distributed training with TensorFlow"
+                    aria-label="NEXT: Distributed training with TensorFlow"
                 >
                     
                         <span class="hide-xs hide-sm text-small icon-mr">NEXT</span>
@@ -540,7 +540,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.github.io/2020/05/09/TensorFlow-graph-optimization-with-Grappler/"
+                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.github.io/2020/05/10/TF2-0-Performance/"
                     title="Share on Facebook"
                     aria-label="Share on Facebook"
                 >
@@ -553,7 +553,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://twitter.com/intent/tweet?text=https://joddiy.github.io/2020/05/09/TensorFlow-graph-optimization-with-Grappler/"
+                    target="new" href="https://twitter.com/intent/tweet?text=https://joddiy.github.io/2020/05/10/TF2-0-Performance/"
                     title="Share on Twitter"
                     aria-label="Share on Twitter"
                 >
@@ -566,7 +566,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://plus.google.com/share?url=https://joddiy.github.io/2020/05/09/TensorFlow-graph-optimization-with-Grappler/"
+                    target="new" href="https://plus.google.com/share?url=https://joddiy.github.io/2020/05/10/TF2-0-Performance/"
                     title="Share on Google+"
                     aria-label="Share on Google+"
                 >
@@ -579,7 +579,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://www.linkedin.com/shareArticle?mini=true&amp;url=https://joddiy.github.io/2020/05/09/TensorFlow-graph-optimization-with-Grappler/"
+                    target="new" href="https://www.linkedin.com/shareArticle?mini=true&amp;url=https://joddiy.github.io/2020/05/10/TF2-0-Performance/"
                     title="global.share_on_linkedin"
                     aria-label="global.share_on_linkedin"
                 >
@@ -592,7 +592,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="http://service.weibo.com/share/share.php?&amp;title=https://joddiy.github.io/2020/05/09/TensorFlow-graph-optimization-with-Grappler/"
+                    target="new" href="http://service.weibo.com/share/share.php?&amp;title=https://joddiy.github.io/2020/05/10/TF2-0-Performance/"
                     title="Share on Weibo"
                     aria-label="Share on Weibo"
                 >
@@ -636,7 +636,7 @@
                     <a
                         class="share-option-btn"
                         target="new"
-                        href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.github.io/2020/05/09/TensorFlow-graph-optimization-with-Grappler/"
+                        href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.github.io/2020/05/10/TF2-0-Performance/"
                         aria-label="Share on Facebook"
                     >
                         <i class="fab fa-facebook" aria-hidden="true"></i><span>Share on Facebook</span>
@@ -649,7 +649,7 @@
                     <a
                         class="share-option-btn"
                         target="new"
-                        href="https://twitter.com/intent/tweet?text=https://joddiy.github.io/2020/05/09/TensorFlow-graph-optimization-with-Grappler/"
+                        href="https://twitter.com/intent/tweet?text=https://joddiy.github.io/2020/05/10/TF2-0-Performance/"
                         aria-label="Share on Twitter"
                     >
                         <i class="fab fa-twitter" aria-hidden="true"></i><span>Share on Twitter</span>
@@ -662,7 +662,7 @@
                     <a
                         class="share-option-btn"
                         target="new"
-                        href="https://plus.google.com/share?url=https://joddiy.github.io/2020/05/09/TensorFlow-graph-optimization-with-Grappler/"
+                        href="https://plus.google.com/share?url=https://joddiy.github.io/2020/05/10/TF2-0-Performance/"
                         aria-label="Share on Google+"
                     >
                         <i class="fab fa-google-plus" aria-hidden="true"></i><span>Share on Google+</span>
@@ -675,7 +675,7 @@
                     <a
                         class="share-option-btn"
                         target="new"
-                        href="https://www.linkedin.com/shareArticle?mini=true&amp;url=https://joddiy.github.io/2020/05/09/TensorFlow-graph-optimization-with-Grappler/"
+                        href="https://www.linkedin.com/shareArticle?mini=true&amp;url=https://joddiy.github.io/2020/05/10/TF2-0-Performance/"
                         aria-label="global.share_on_linkedin"
                     >
                         <i class="fab fa-linkedin" aria-hidden="true"></i><span>global.share_on_linkedin</span>
@@ -688,7 +688,7 @@
                     <a
                         class="share-option-btn"
                         target="new"
-                        href="http://service.weibo.com/share/share.php?&amp;title=https://joddiy.github.io/2020/05/09/TensorFlow-graph-optimization-with-Grappler/"
+                        href="http://service.weibo.com/share/share.php?&amp;title=https://joddiy.github.io/2020/05/10/TF2-0-Performance/"
                         aria-label="Share on Weibo"
                     >
                         <i class="fab fa-weibo" aria-hidden="true"></i><span>Share on Weibo</span>
@@ -761,7 +761,7 @@
               repo: 'joddiy.github.io',
               owner: 'joddiy',
               admin: ['joddiy'],
-              id: '2020/05/09/TensorFlow-graph-optimization-with-Grappler/',
+              id: '2020/05/10/TF2-0-Performance/',
               ...{"language":"en","perPage":10,"distractionFreeMode":false,"enableHotKey":true,"pagerDirection":"first"}
             }).render('gitalk')
           })()

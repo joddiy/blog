@@ -1,0 +1,821 @@
+
+<!DOCTYPE html>
+<html lang="en">
+    
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="generator" content="Jz Blog">
+    <title>PHP下的一种多计划任务守护模型 - Jz Blog</title>
+    <meta name="author" content="Joddiy Zhang">
+    
+    
+        <link rel="icon" href="https://joddiy.github.io/assets/images/favicon.ico">
+    
+    
+        
+            <link rel="alternate" type="application/atom+xml" title="RSS" href="/atom.xml">
+        
+    
+    <script type="application/ld+json">{"@context":"http://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"Joddiy Zhang","sameAs":["https://github.com/joddiy","https://www.linkedin.com/profile/"],"image":"14108933.jpeg"},"articleBody":"前言此部分为设计背景，可不看从16年8月至今我一直都在开发 XiaoMi 内部通用 BI 系统的 ETL 模块，第一个版本在10月初上线，目前还在不断的迭代开发中。整个 ETL 模块大致分成三个部分： \n\n前端部分：记录 ETL 的配置信息，包括数据源，脚本，执行时参数等\n多进程调度部分：包括触发器和调度器等，触发器筛选可被执行的作业并封装成任务，调度器读取任务执行\nETL 执行模块：拿到任务之后根据相应参数实例化对应的数据抓取模块 E 和存储模块 L，并处理两个模块之间的数据格式转化 T\n\n其中多进程调度模块主要由以下五个子模块组成：\n\nTrigger：触发器，筛选作业封装任务，对于实时任务直接开启子进程启动 ETL 模块\nProcessor：调度器，接收任务（历史任务）指令，开启子进程启动 ETL 模块\nScavenger：清道夫，清除无用数据\nSentry：哨兵，接收指令杀死对应进程\nInspector：质检员，定期抽检数据准确性\n\n这些子模块都需要进程常驻，所以需要一种合适的守护模型的设计方案。\n设计目的设计一种守护模型的方案，保证进程常驻，同时避免单一进程长时间存活带来的一些问题（如 Yii 框架的配置信息无法及时更新）\n设计方案一种多个计划任务交替获得执行权的守护模型\n简单的流程图\n\n流程图中有两个计划任务，odd 和 even，假设 odd 已经在执行，even 需要获得执行权\nPID 文件存储了当前正在执行的进程 ID ，对此文件的写入操作需要加文件锁\nodd 进程首先从 PID 文件中获取当前正在执行的 PID ，检查其是否存活，如果不存活则直接写入 PID，并启动任务，否则下一步\n通知读取到的 PID 退出，间隔 1s 循环检查是否已经退出，如果已经退出则写入新的 PID 并启动任务。\n采用平滑退出机制，odd 进程收到退出信号后会在当前正在执行的任务结束后退出。\n\n源码及分析ETLCronCommand 类123456789101112131415161718192021222324252627282930313233343536373839404142434445464748495051525354555657585960616263646566676869707172737475767778798081828384858687888990919293949596979899100101102103104105106/** * ETL Commend 入口命令 * Class ETLCronCommand * @package app\\services\\etl */class ETLCronCommand&#123;    /**     * 启动     * @param $pidFile     * @param ETLSchedule $schedule     */    private function start($pidFile, $schedule)    &#123;        $shouldRun = true;        // 注册信号处理函数，传入 $shouldRun 的地址        pcntl_signal(SIGHUP, function ($signo) use (&amp;$shouldRun) &#123;            $shouldRun = false;        &#125;);        if ($this-&gt;writePID($pidFile)) &#123;            // 收到信号后的下一轮退出            while ($shouldRun) &#123;                // 检查信号                pcntl_signal_dispatch();                $schedule-&gt;run();                sleep(1);            &#125;            ULog::stdout(\"Schedule has exited.\");        &#125;    &#125;    /**     * 平滑重启     * @param $pidFile     * @param ETLSchedule $schedule     */    public function restart($pidFile, $schedule)    &#123;        $this-&gt;stop($pidFile);        while ($this-&gt;isAlive($pidFile)) &#123;            sleep(1);        &#125;        $this-&gt;start($pidFile, $schedule);    &#125;    /**     * 向文件中写入 PID     * @param $pidFile     * @return bool     */    private function writePID($pidFile)    &#123;        // 进程存活        if ($this-&gt;isAlive($pidFile)) &#123;            return false;        &#125;        // 否则加锁并写入最新进程号        $fp = fopen($pidFile, 'w+');        if (flock($fp, LOCK_EX | LOCK_NB)) &#123;            fwrite($fp, posix_getpid());            fflush($fp);            flock($fp, LOCK_UN);        &#125; else &#123;            ULog::stdout(\"Some other Daemon is running, return for it.\");            return false;        &#125;        fclose($fp);        ULog::stdout(\"The Schedule is dead, starting a new one.\");        return true;    &#125;    /**     * 进程是否存活     * @param $pidFile     * @return bool     */    private function isAlive($pidFile)    &#123;        // 文件存在 且 进程存活        if (file_exists($pidFile)) &#123;            $pid = file_get_contents($pidFile);            if (!empty($pid) &amp;&amp; file_exists(\"/proc/$pid\")) &#123;                ULog::stdout(\"The Schedule is still alive, sleep.\");                return true;            &#125;        &#125;        return false;    &#125;    /**     * 发送信号通知进程结束     * @param $pidFile     */    public function stop($pidFile)    &#123;        if (file_exists($pidFile)) &#123;            $filePid = file_get_contents($pidFile);            if (file_exists(\"/proc/$filePid\")) &#123;                posix_kill($filePid, SIGHUP);                ULog::stdout(\"Send stop signal successfully.\");                return;            &#125;        &#125;        ULog::stdout(\"The Schedule is not alive.\");    &#125;&#125;\n\n命令行函数（以 Sentry 为例）12345678910111213141516171819202122232425/** * Class EtlController * * @package app\\commands */class EtlController extends CommandController&#123;    /**     * restart sentry     * @param string $pidFile     */    public function actionRestartSentry($pidFile = '/tmp/sentry.pid')    &#123;        (new ETLCronCommand())-&gt;restart($pidFile, new ETLSentry());    &#125;        /**     * stop sentry     * @param string $pidFile     */    public function actionStopSentry($pidFile = '/tmp/sentry.pid')    &#123;        (new ETLCronCommand())-&gt;stop($pidFile);    &#125;&#125;\n\n备注\n所有待守护的子模块需要实现 ETLSchedule 接口，该接口只有一个 run 函数。\n计划任务的配置参数：\nodd: 1-59/2 * * * * 每奇数分钟启动\neven: */2 * * * * 每偶数分钟启动\n\n\n\n后记暂时没想到\n","dateCreated":"2017-01-11T10:18:37+08:00","dateModified":"2020-05-11T15:03:06+08:00","datePublished":"2017-01-11T10:18:37+08:00","description":"A customed PHP crontab model","headline":"PHP下的一种多计划任务守护模型","image":["https://cdn.iconscout.com/icon/free/png-256/php-27-226042.png","https://www.thoughtco.com/thmb/_3C13Ig9g4b1d0Xps3CJi5dexIc=/1333x1000/smart/filters:no_upscale()/PHP-code-58d2d5803df78c51623a6ce2.jpg"],"mainEntityOfPage":{"@type":"WebPage","@id":"https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E4%B8%80%E7%A7%8D%E5%A4%9A%E8%AE%A1%E5%88%92%E4%BB%BB%E5%8A%A1%E5%AE%88%E6%8A%A4%E6%A8%A1%E5%9E%8B/"},"publisher":{"@type":"Organization","name":"Joddiy Zhang","sameAs":["https://github.com/joddiy","https://www.linkedin.com/profile/"],"image":"14108933.jpeg","logo":{"@type":"ImageObject","url":"14108933.jpeg"}},"url":"https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E4%B8%80%E7%A7%8D%E5%A4%9A%E8%AE%A1%E5%88%92%E4%BB%BB%E5%8A%A1%E5%AE%88%E6%8A%A4%E6%A8%A1%E5%9E%8B/","keywords":"PHP, 工作向, 模型设计","thumbnailUrl":"https://cdn.iconscout.com/icon/free/png-256/php-27-226042.png"}</script>
+    <meta name="description" content="A customed PHP crontab model">
+<meta property="og:type" content="blog">
+<meta property="og:title" content="PHP下的一种多计划任务守护模型">
+<meta property="og:url" content="https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E4%B8%80%E7%A7%8D%E5%A4%9A%E8%AE%A1%E5%88%92%E4%BB%BB%E5%8A%A1%E5%AE%88%E6%8A%A4%E6%A8%A1%E5%9E%8B/index.html">
+<meta property="og:site_name" content="Jz Blog">
+<meta property="og:description" content="A customed PHP crontab model">
+<meta property="og:locale" content="en_US">
+<meta property="og:image" content="https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E4%B8%80%E7%A7%8D%E5%A4%9A%E8%AE%A1%E5%88%92%E4%BB%BB%E5%8A%A1%E5%AE%88%E6%8A%A4%E6%A8%A1%E5%9E%8B/flow_chart.png">
+<meta property="article:published_time" content="2017-01-11T02:18:37.000Z">
+<meta property="article:modified_time" content="2020-05-11T07:03:06.849Z">
+<meta property="article:author" content="Joddiy Zhang">
+<meta property="article:tag" content="PHP">
+<meta property="article:tag" content="工作向">
+<meta property="article:tag" content="模型设计">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E4%B8%80%E7%A7%8D%E5%A4%9A%E8%AE%A1%E5%88%92%E4%BB%BB%E5%8A%A1%E5%AE%88%E6%8A%A4%E6%A8%A1%E5%9E%8B/flow_chart.png">
+    
+    
+        
+    
+    
+        <meta property="og:image" content="https://joddiy.github.io/assets/images/14108933.jpeg"/>
+    
+    
+        <meta property="og:image" content="https://cdn.iconscout.com/icon/free/png-256/php-27-226042.png"/>
+        <meta class="swiftype" name="image" data-type="enum" content="https://cdn.iconscout.com/icon/free/png-256/php-27-226042.png"/>
+    
+    
+        <meta property="og:image" content="https://www.thoughtco.com/thmb/_3C13Ig9g4b1d0Xps3CJi5dexIc=/1333x1000/smart/filters:no_upscale()/PHP-code-58d2d5803df78c51623a6ce2.jpg"/>
+        <meta class="swiftype" name="image" data-type="enum" content="https://www.thoughtco.com/thmb/_3C13Ig9g4b1d0Xps3CJi5dexIc=/1333x1000/smart/filters:no_upscale()/PHP-code-58d2d5803df78c51623a6ce2.jpg"/>
+    
+    
+    <!--STYLES-->
+    
+<link rel="stylesheet" href="/assets/css/style-k2ygfmkptjuemotlwbkrcqm19wuozptgnhknynmmndcykyqouv6n8vvzzybd.min.css">
+
+    <!--STYLES END-->
+    
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-109736487-1"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+
+        gtag('config', 'UA-109736487-1');
+    </script>
+
+
+    
+
+    
+        
+            
+<link rel="stylesheet" href="/assets/css/gitalk.css">
+
+        
+    
+</head>
+
+    <body>
+        <div id="blog">
+            <!-- Define author's picture -->
+
+
+    
+        
+            
+        
+    
+
+<header id="header" data-behavior="5">
+    <i id="btn-open-sidebar" class="fa fa-lg fa-bars"></i>
+    <div class="header-title">
+        <a
+            class="header-title-link"
+            href="/%20"
+            aria-label=""
+        >
+            Jz Blog
+        </a>
+    </div>
+    
+        
+            <a
+                class="header-right-picture "
+                href="#about"
+                aria-label="Open the link: /#about"
+            >
+        
+        
+            <img class="header-picture" src="/assets/images/14108933.jpeg" alt="Author&#39;s picture"/>
+        
+        </a>
+    
+</header>
+
+            <!-- Define author's picture -->
+
+
+
+        
+    
+
+<nav id="sidebar" data-behavior="5">
+    <div class="sidebar-container">
+        
+            <div class="sidebar-profile">
+                <a
+                    href="/#about"
+                    aria-label="Read more about the author"
+                >
+                    <img class="sidebar-profile-picture" src="/assets/images/14108933.jpeg" alt="Author&#39;s picture"/>
+                </a>
+                <h4 class="sidebar-profile-name">Joddiy Zhang</h4>
+                
+                    <h5 class="sidebar-profile-bio"><p><a href="mailto:joddiyzhang@gmail.com">joddiyzhang@gmail.com</a></p>
+</h5>
+                
+            </div>
+        
+        
+            <ul class="sidebar-buttons">
+            
+                <li class="sidebar-button">
+                    
+                        <a
+                            class="sidebar-button-link "
+                            href="/"
+                            
+                            rel="noopener"
+                            title="Home"
+                        >
+                        <i class="sidebar-button-icon fa fa-home" aria-hidden="true"></i>
+                        <span class="sidebar-button-desc">Home</span>
+                    </a>
+            </li>
+            
+                <li class="sidebar-button">
+                    
+                        <a
+                            class="sidebar-button-link "
+                            href="/all-categories"
+                            
+                            rel="noopener"
+                            title="Categories"
+                        >
+                        <i class="sidebar-button-icon fa fa-bookmark" aria-hidden="true"></i>
+                        <span class="sidebar-button-desc">Categories</span>
+                    </a>
+            </li>
+            
+                <li class="sidebar-button">
+                    
+                        <a
+                            class="sidebar-button-link "
+                            href="/all-tags"
+                            
+                            rel="noopener"
+                            title="Tags"
+                        >
+                        <i class="sidebar-button-icon fa fa-tags" aria-hidden="true"></i>
+                        <span class="sidebar-button-desc">Tags</span>
+                    </a>
+            </li>
+            
+                <li class="sidebar-button">
+                    
+                        <a
+                            class="sidebar-button-link "
+                            href="/all-archives"
+                            
+                            rel="noopener"
+                            title="Archives"
+                        >
+                        <i class="sidebar-button-icon fa fa-archive" aria-hidden="true"></i>
+                        <span class="sidebar-button-desc">Archives</span>
+                    </a>
+            </li>
+            
+                <li class="sidebar-button">
+                    
+                        <a
+                            class="sidebar-button-link open-algolia-search"
+                            href="#search"
+                            
+                            rel="noopener"
+                            title="Search"
+                        >
+                        <i class="sidebar-button-icon fa fa-search" aria-hidden="true"></i>
+                        <span class="sidebar-button-desc">Search</span>
+                    </a>
+            </li>
+            
+                <li class="sidebar-button">
+                    
+                        <a
+                            class="sidebar-button-link "
+                            href="#about"
+                            
+                            rel="noopener"
+                            title="About"
+                        >
+                        <i class="sidebar-button-icon fa fa-question" aria-hidden="true"></i>
+                        <span class="sidebar-button-desc">About</span>
+                    </a>
+            </li>
+            
+        </ul>
+        
+            <ul class="sidebar-buttons">
+            
+                <li class="sidebar-button">
+                    
+                        <a
+                            class="sidebar-button-link "
+                            href="https://github.com/joddiy"
+                            
+                                target="_blank"
+                            
+                            rel="noopener"
+                            title="GitHub"
+                        >
+                        <i class="sidebar-button-icon fab fa-github" aria-hidden="true"></i>
+                        <span class="sidebar-button-desc">GitHub</span>
+                    </a>
+            </li>
+            
+                <li class="sidebar-button">
+                    
+                        <a
+                            class="sidebar-button-link "
+                            href="https://www.linkedin.com/profile/"
+                            
+                                target="_blank"
+                            
+                            rel="noopener"
+                            title="LinkedIn"
+                        >
+                        <i class="sidebar-button-icon fab fa-linkedin" aria-hidden="true"></i>
+                        <span class="sidebar-button-desc">LinkedIn</span>
+                    </a>
+            </li>
+            
+        </ul>
+        
+            <ul class="sidebar-buttons">
+            
+                <li class="sidebar-button">
+                    
+                        <a
+                            class="sidebar-button-link "
+                            href="/atom.xml"
+                            
+                            rel="noopener"
+                            title="RSS"
+                        >
+                        <i class="sidebar-button-icon fa fa-rss" aria-hidden="true"></i>
+                        <span class="sidebar-button-desc">RSS</span>
+                    </a>
+            </li>
+            
+        </ul>
+        
+    </div>
+</nav>
+
+            
+        <div class="post-header-cover
+                    text-center
+                    post-header-cover--partial"
+             style="background-image:url('https://www.thoughtco.com/thmb/_3C13Ig9g4b1d0Xps3CJi5dexIc=/1333x1000/smart/filters:no_upscale()/PHP-code-58d2d5803df78c51623a6ce2.jpg');"
+             data-behavior="5">
+            
+                <div class="post-header main-content-wrap text-center">
+    
+        <h1 class="post-title">
+            PHP下的一种多计划任务守护模型
+        </h1>
+    
+    
+        <div class="post-meta">
+    <time datetime="2017-01-11T10:18:37+08:00">
+	
+		    Jan 11, 2017
+    	
+    </time>
+    
+        <span>in </span>
+        
+    <a class="category-link" href="/categories/Tool/">Tool</a>
+
+
+    
+</div>
+
+    
+</div>
+
+            
+        </div>
+
+            <div id="main" data-behavior="5"
+                 class="hasCover
+                        hasCoverMetaIn
+                        ">
+                
+<article class="post">
+    
+    
+    <div class="post-content markdown">
+        <div class="main-content-wrap">
+            <h2 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h2><p><em>此部分为设计背景，可不看</em><br>从16年8月至今我一直都在开发 XiaoMi 内部通用 BI 系统的 ETL 模块，第一个版本在10月初上线，目前还在不断的迭代开发中。整个 ETL 模块大致分成三个部分： </p>
+<ul>
+<li>前端部分：记录 ETL 的配置信息，包括数据源，脚本，执行时参数等</li>
+<li>多进程调度部分：包括触发器和调度器等，触发器筛选可被执行的作业并封装成任务，调度器读取任务执行</li>
+<li>ETL 执行模块：拿到任务之后根据相应参数实例化对应的数据抓取模块 E 和存储模块 L，并处理两个模块之间的数据格式转化 T</li>
+</ul>
+<p>其中多进程调度模块主要由以下五个子模块组成：</p>
+<ul>
+<li>Trigger：触发器，筛选作业封装任务，对于实时任务直接开启子进程启动 ETL 模块</li>
+<li>Processor：调度器，接收任务（历史任务）指令，开启子进程启动 ETL 模块</li>
+<li>Scavenger：清道夫，清除无用数据</li>
+<li>Sentry：哨兵，接收指令杀死对应进程</li>
+<li>Inspector：质检员，定期抽检数据准确性</li>
+</ul>
+<p>这些子模块都需要进程常驻，所以需要一种合适的守护模型的设计方案。</p>
+<h2 id="设计目的"><a href="#设计目的" class="headerlink" title="设计目的"></a>设计目的</h2><p>设计一种守护模型的方案，保证进程常驻，同时避免单一进程长时间存活带来的一些问题（如 Yii 框架的配置信息无法及时更新）</p>
+<h2 id="设计方案"><a href="#设计方案" class="headerlink" title="设计方案"></a>设计方案</h2><p>一种多个计划任务交替获得执行权的守护模型</p>
+<h2 id="简单的流程图"><a href="#简单的流程图" class="headerlink" title="简单的流程图"></a>简单的流程图</h2><p><img src="flow_chart.png" alt="流程图"></p>
+<ul>
+<li>流程图中有两个计划任务，odd 和 even，假设 odd 已经在执行，even 需要获得执行权</li>
+<li>PID 文件存储了当前正在执行的进程 ID ，对此文件的写入操作需要加文件锁</li>
+<li>odd 进程首先从 PID 文件中获取当前正在执行的 PID ，检查其是否存活，如果不存活则直接写入 PID，并启动任务，否则下一步</li>
+<li>通知读取到的 PID 退出，间隔 1s 循环检查是否已经退出，如果已经退出则写入新的 PID 并启动任务。</li>
+<li>采用平滑退出机制，odd 进程收到退出信号后会在当前正在执行的任务结束后退出。</li>
+</ul>
+<h2 id="源码及分析"><a href="#源码及分析" class="headerlink" title="源码及分析"></a>源码及分析</h2><h4 id="ETLCronCommand-类"><a href="#ETLCronCommand-类" class="headerlink" title="ETLCronCommand 类"></a>ETLCronCommand 类</h4><figure class="highlight php"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment"> * ETL Commend 入口命令</span></span><br><span class="line"><span class="comment"> * Class ETLCronCommand</span></span><br><span class="line"><span class="comment"> * <span class="doctag">@package</span> app\services\etl</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="class"><span class="keyword">class</span> <span class="title">ETLCronCommand</span></span></span><br><span class="line"><span class="class"></span>&#123;</span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * 启动</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> $pidFile</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> ETLSchedule $schedule</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="keyword">private</span> <span class="function"><span class="keyword">function</span> <span class="title">start</span><span class="params">($pidFile, $schedule)</span></span></span><br><span class="line"><span class="function">    </span>&#123;</span><br><span class="line">        $shouldRun = <span class="keyword">true</span>;</span><br><span class="line">        <span class="comment">// 注册信号处理函数，传入 $shouldRun 的地址</span></span><br><span class="line">        pcntl_signal(SIGHUP, <span class="function"><span class="keyword">function</span> <span class="params">($signo)</span> <span class="title">use</span> <span class="params">(&amp;$shouldRun)</span> </span>&#123;</span><br><span class="line">            $shouldRun = <span class="keyword">false</span>;</span><br><span class="line">        &#125;);</span><br><span class="line">        <span class="keyword">if</span> (<span class="keyword">$this</span>-&gt;writePID($pidFile)) &#123;</span><br><span class="line">            <span class="comment">// 收到信号后的下一轮退出</span></span><br><span class="line">            <span class="keyword">while</span> ($shouldRun) &#123;</span><br><span class="line">                <span class="comment">// 检查信号</span></span><br><span class="line">                pcntl_signal_dispatch();</span><br><span class="line">                $schedule-&gt;run();</span><br><span class="line">                sleep(<span class="number">1</span>);</span><br><span class="line">            &#125;</span><br><span class="line">            ULog::stdout(<span class="string">"Schedule has exited."</span>);</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * 平滑重启</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> $pidFile</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> ETLSchedule $schedule</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="keyword">public</span> <span class="function"><span class="keyword">function</span> <span class="title">restart</span><span class="params">($pidFile, $schedule)</span></span></span><br><span class="line"><span class="function">    </span>&#123;</span><br><span class="line">        <span class="keyword">$this</span>-&gt;stop($pidFile);</span><br><span class="line">        <span class="keyword">while</span> (<span class="keyword">$this</span>-&gt;isAlive($pidFile)) &#123;</span><br><span class="line">            sleep(<span class="number">1</span>);</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">$this</span>-&gt;start($pidFile, $schedule);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * 向文件中写入 PID</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> $pidFile</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@return</span> bool</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="keyword">private</span> <span class="function"><span class="keyword">function</span> <span class="title">writePID</span><span class="params">($pidFile)</span></span></span><br><span class="line"><span class="function">    </span>&#123;</span><br><span class="line">        <span class="comment">// 进程存活</span></span><br><span class="line">        <span class="keyword">if</span> (<span class="keyword">$this</span>-&gt;isAlive($pidFile)) &#123;</span><br><span class="line">            <span class="keyword">return</span> <span class="keyword">false</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// 否则加锁并写入最新进程号</span></span><br><span class="line">        $fp = fopen($pidFile, <span class="string">'w+'</span>);</span><br><span class="line">        <span class="keyword">if</span> (flock($fp, LOCK_EX | LOCK_NB)) &#123;</span><br><span class="line">            fwrite($fp, posix_getpid());</span><br><span class="line">            fflush($fp);</span><br><span class="line">            flock($fp, LOCK_UN);</span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">            ULog::stdout(<span class="string">"Some other Daemon is running, return for it."</span>);</span><br><span class="line">            <span class="keyword">return</span> <span class="keyword">false</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        fclose($fp);</span><br><span class="line">        ULog::stdout(<span class="string">"The Schedule is dead, starting a new one."</span>);</span><br><span class="line">        <span class="keyword">return</span> <span class="keyword">true</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * 进程是否存活</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> $pidFile</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@return</span> bool</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="keyword">private</span> <span class="function"><span class="keyword">function</span> <span class="title">isAlive</span><span class="params">($pidFile)</span></span></span><br><span class="line"><span class="function">    </span>&#123;</span><br><span class="line">        <span class="comment">// 文件存在 且 进程存活</span></span><br><span class="line">        <span class="keyword">if</span> (file_exists($pidFile)) &#123;</span><br><span class="line">            $pid = file_get_contents($pidFile);</span><br><span class="line">            <span class="keyword">if</span> (!<span class="keyword">empty</span>($pid) &amp;&amp; file_exists(<span class="string">"/proc/$pid"</span>)) &#123;</span><br><span class="line">                ULog::stdout(<span class="string">"The Schedule is still alive, sleep."</span>);</span><br><span class="line">                <span class="keyword">return</span> <span class="keyword">true</span>;</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> <span class="keyword">false</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * 发送信号通知进程结束</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> $pidFile</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="keyword">public</span> <span class="function"><span class="keyword">function</span> <span class="title">stop</span><span class="params">($pidFile)</span></span></span><br><span class="line"><span class="function">    </span>&#123;</span><br><span class="line">        <span class="keyword">if</span> (file_exists($pidFile)) &#123;</span><br><span class="line">            $filePid = file_get_contents($pidFile);</span><br><span class="line">            <span class="keyword">if</span> (file_exists(<span class="string">"/proc/$filePid"</span>)) &#123;</span><br><span class="line">                posix_kill($filePid, SIGHUP);</span><br><span class="line">                ULog::stdout(<span class="string">"Send stop signal successfully."</span>);</span><br><span class="line">                <span class="keyword">return</span>;</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        ULog::stdout(<span class="string">"The Schedule is not alive."</span>);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="命令行函数（以-Sentry-为例）"><a href="#命令行函数（以-Sentry-为例）" class="headerlink" title="命令行函数（以 Sentry 为例）"></a>命令行函数（以 Sentry 为例）</h4><figure class="highlight php"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment"> * Class EtlController</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * <span class="doctag">@package</span> app\commands</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="class"><span class="keyword">class</span> <span class="title">EtlController</span> <span class="keyword">extends</span> <span class="title">CommandController</span></span></span><br><span class="line"><span class="class"></span>&#123;</span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * restart sentry</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> string $pidFile</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="keyword">public</span> <span class="function"><span class="keyword">function</span> <span class="title">actionRestartSentry</span><span class="params">($pidFile = <span class="string">'/tmp/sentry.pid'</span>)</span></span></span><br><span class="line"><span class="function">    </span>&#123;</span><br><span class="line">        (<span class="keyword">new</span> ETLCronCommand())-&gt;restart($pidFile, <span class="keyword">new</span> ETLSentry());</span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * stop sentry</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> string $pidFile</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="keyword">public</span> <span class="function"><span class="keyword">function</span> <span class="title">actionStopSentry</span><span class="params">($pidFile = <span class="string">'/tmp/sentry.pid'</span>)</span></span></span><br><span class="line"><span class="function">    </span>&#123;</span><br><span class="line">        (<span class="keyword">new</span> ETLCronCommand())-&gt;stop($pidFile);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="备注"><a href="#备注" class="headerlink" title="备注"></a>备注</h4><ul>
+<li>所有待守护的子模块需要实现 ETLSchedule 接口，该接口只有一个 run 函数。</li>
+<li>计划任务的配置参数：<ul>
+<li>odd: 1-59/2 * * * * 每奇数分钟启动</li>
+<li>even: */2 * * * * 每偶数分钟启动</li>
+</ul>
+</li>
+</ul>
+<h2 id="后记"><a href="#后记" class="headerlink" title="后记"></a>后记</h2><p>暂时没想到</p>
+
+            
+
+
+        </div>
+    </div>
+    <div id="post-footer" class="post-footer main-content-wrap">
+        
+            <div class="post-footer-tags">
+                <span class="text-color-light text-small">TAGGED IN</span><br/>
+                
+    <a class="tag tag--primary tag--small t-link" href="/tags/PHP/" rel="tag">PHP</a> <a class="tag tag--primary tag--small t-link" href="/tags/%E5%B7%A5%E4%BD%9C%E5%90%91/" rel="tag">工作向</a> <a class="tag tag--primary tag--small t-link" href="/tags/%E6%A8%A1%E5%9E%8B%E8%AE%BE%E8%AE%A1/" rel="tag">模型设计</a>
+
+            </div>
+        
+        
+            <div class="post-actions-wrap">
+    <nav>
+        <ul class="post-actions post-action-nav">
+            <li class="post-action">
+                
+                    
+                <a
+                    class="post-action-btn btn btn--default tooltip--top"
+                    href="/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E5%87%A0%E7%A7%8D%E5%A4%9A%E8%BF%9B%E7%A8%8B%E6%A8%A1%E5%9E%8B/"
+                    data-tooltip="PHP下的几种多进程模型"
+                    aria-label="PREVIOUS: PHP下的几种多进程模型"
+                >
+                    
+                        <i class="fa fa-angle-left" aria-hidden="true"></i>
+                        <span class="hide-xs hide-sm text-small icon-ml">PREVIOUS</span>
+                    </a>
+            </li>
+            <li class="post-action">
+                
+                    
+                <a
+                    class="post-action-btn btn btn--default tooltip--top"
+                    href="/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"
+                    data-tooltip="关于代码重构的研究"
+                    aria-label="NEXT: 关于代码重构的研究"
+                >
+                    
+                        <span class="hide-xs hide-sm text-small icon-mr">NEXT</span>
+                        <i class="fa fa-angle-right" aria-hidden="true"></i>
+                    </a>
+            </li>
+        </ul>
+    </nav>
+    <ul class="post-actions post-action-share">
+        <li class="post-action hide-lg hide-md hide-sm">
+            <a
+                class="post-action-btn btn btn--default btn-open-shareoptions"
+                href="#btn-open-shareoptions"
+                aria-label="Share this post"
+            >
+                <i class="fa fa-share-alt" aria-hidden="true"></i>
+            </a>
+        </li>
+        
+            
+            
+            <li class="post-action hide-xs">
+                <a
+                    class="post-action-btn btn btn--default"
+                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E4%B8%80%E7%A7%8D%E5%A4%9A%E8%AE%A1%E5%88%92%E4%BB%BB%E5%8A%A1%E5%AE%88%E6%8A%A4%E6%A8%A1%E5%9E%8B/"
+                    title="Share on Facebook"
+                    aria-label="Share on Facebook"
+                >
+                    <i class="fab fa-facebook" aria-hidden="true"></i>
+                </a>
+            </li>
+        
+            
+            
+            <li class="post-action hide-xs">
+                <a
+                    class="post-action-btn btn btn--default"
+                    target="new" href="https://twitter.com/intent/tweet?text=https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E4%B8%80%E7%A7%8D%E5%A4%9A%E8%AE%A1%E5%88%92%E4%BB%BB%E5%8A%A1%E5%AE%88%E6%8A%A4%E6%A8%A1%E5%9E%8B/"
+                    title="Share on Twitter"
+                    aria-label="Share on Twitter"
+                >
+                    <i class="fab fa-twitter" aria-hidden="true"></i>
+                </a>
+            </li>
+        
+            
+            
+            <li class="post-action hide-xs">
+                <a
+                    class="post-action-btn btn btn--default"
+                    target="new" href="https://plus.google.com/share?url=https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E4%B8%80%E7%A7%8D%E5%A4%9A%E8%AE%A1%E5%88%92%E4%BB%BB%E5%8A%A1%E5%AE%88%E6%8A%A4%E6%A8%A1%E5%9E%8B/"
+                    title="Share on Google+"
+                    aria-label="Share on Google+"
+                >
+                    <i class="fab fa-google-plus" aria-hidden="true"></i>
+                </a>
+            </li>
+        
+            
+            
+            <li class="post-action hide-xs">
+                <a
+                    class="post-action-btn btn btn--default"
+                    target="new" href="https://www.linkedin.com/shareArticle?mini=true&amp;url=https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E4%B8%80%E7%A7%8D%E5%A4%9A%E8%AE%A1%E5%88%92%E4%BB%BB%E5%8A%A1%E5%AE%88%E6%8A%A4%E6%A8%A1%E5%9E%8B/"
+                    title="global.share_on_linkedin"
+                    aria-label="global.share_on_linkedin"
+                >
+                    <i class="fab fa-linkedin" aria-hidden="true"></i>
+                </a>
+            </li>
+        
+            
+            
+            <li class="post-action hide-xs">
+                <a
+                    class="post-action-btn btn btn--default"
+                    target="new" href="http://service.weibo.com/share/share.php?&amp;title=https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E4%B8%80%E7%A7%8D%E5%A4%9A%E8%AE%A1%E5%88%92%E4%BB%BB%E5%8A%A1%E5%AE%88%E6%8A%A4%E6%A8%A1%E5%9E%8B/"
+                    title="Share on Weibo"
+                    aria-label="Share on Weibo"
+                >
+                    <i class="fab fa-weibo" aria-hidden="true"></i>
+                </a>
+            </li>
+        
+        
+            
+                <li class="post-action">
+                    <a
+                        class="post-action-btn btn btn--default"
+                        href="#gitalk"
+                        aria-label="Leave a comment"
+                    >
+                        <i class="fa fa-comment"></i>
+                    </a>
+                </li>
+            
+        
+        <li class="post-action">
+            
+                <a class="post-action-btn btn btn--default" href="#" aria-label="Back to top">
+            
+                <i class="fa fa-list" aria-hidden="true"></i>
+            </a>
+        </li>
+    </ul>
+</div>
+
+
+        
+        
+            
+                <div id="gitalk"></div>
+
+            
+        
+    </div>
+</article>
+
+
+
+                <footer id="footer" class="main-content-wrap">
+    <span class="copyrights">
+        Copyrights &copy; 2020 Joddiy Zhang. All Rights Reserved.
+    </span>
+</footer>
+
+            </div>
+            
+                <div id="bottom-bar" class="post-bottom-bar" data-behavior="5">
+                    <div class="post-actions-wrap">
+    <nav>
+        <ul class="post-actions post-action-nav">
+            <li class="post-action">
+                
+                    
+                <a
+                    class="post-action-btn btn btn--default tooltip--top"
+                    href="/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E5%87%A0%E7%A7%8D%E5%A4%9A%E8%BF%9B%E7%A8%8B%E6%A8%A1%E5%9E%8B/"
+                    data-tooltip="PHP下的几种多进程模型"
+                    aria-label="PREVIOUS: PHP下的几种多进程模型"
+                >
+                    
+                        <i class="fa fa-angle-left" aria-hidden="true"></i>
+                        <span class="hide-xs hide-sm text-small icon-ml">PREVIOUS</span>
+                    </a>
+            </li>
+            <li class="post-action">
+                
+                    
+                <a
+                    class="post-action-btn btn btn--default tooltip--top"
+                    href="/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"
+                    data-tooltip="关于代码重构的研究"
+                    aria-label="NEXT: 关于代码重构的研究"
+                >
+                    
+                        <span class="hide-xs hide-sm text-small icon-mr">NEXT</span>
+                        <i class="fa fa-angle-right" aria-hidden="true"></i>
+                    </a>
+            </li>
+        </ul>
+    </nav>
+    <ul class="post-actions post-action-share">
+        <li class="post-action hide-lg hide-md hide-sm">
+            <a
+                class="post-action-btn btn btn--default btn-open-shareoptions"
+                href="#btn-open-shareoptions"
+                aria-label="Share this post"
+            >
+                <i class="fa fa-share-alt" aria-hidden="true"></i>
+            </a>
+        </li>
+        
+            
+            
+            <li class="post-action hide-xs">
+                <a
+                    class="post-action-btn btn btn--default"
+                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E4%B8%80%E7%A7%8D%E5%A4%9A%E8%AE%A1%E5%88%92%E4%BB%BB%E5%8A%A1%E5%AE%88%E6%8A%A4%E6%A8%A1%E5%9E%8B/"
+                    title="Share on Facebook"
+                    aria-label="Share on Facebook"
+                >
+                    <i class="fab fa-facebook" aria-hidden="true"></i>
+                </a>
+            </li>
+        
+            
+            
+            <li class="post-action hide-xs">
+                <a
+                    class="post-action-btn btn btn--default"
+                    target="new" href="https://twitter.com/intent/tweet?text=https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E4%B8%80%E7%A7%8D%E5%A4%9A%E8%AE%A1%E5%88%92%E4%BB%BB%E5%8A%A1%E5%AE%88%E6%8A%A4%E6%A8%A1%E5%9E%8B/"
+                    title="Share on Twitter"
+                    aria-label="Share on Twitter"
+                >
+                    <i class="fab fa-twitter" aria-hidden="true"></i>
+                </a>
+            </li>
+        
+            
+            
+            <li class="post-action hide-xs">
+                <a
+                    class="post-action-btn btn btn--default"
+                    target="new" href="https://plus.google.com/share?url=https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E4%B8%80%E7%A7%8D%E5%A4%9A%E8%AE%A1%E5%88%92%E4%BB%BB%E5%8A%A1%E5%AE%88%E6%8A%A4%E6%A8%A1%E5%9E%8B/"
+                    title="Share on Google+"
+                    aria-label="Share on Google+"
+                >
+                    <i class="fab fa-google-plus" aria-hidden="true"></i>
+                </a>
+            </li>
+        
+            
+            
+            <li class="post-action hide-xs">
+                <a
+                    class="post-action-btn btn btn--default"
+                    target="new" href="https://www.linkedin.com/shareArticle?mini=true&amp;url=https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E4%B8%80%E7%A7%8D%E5%A4%9A%E8%AE%A1%E5%88%92%E4%BB%BB%E5%8A%A1%E5%AE%88%E6%8A%A4%E6%A8%A1%E5%9E%8B/"
+                    title="global.share_on_linkedin"
+                    aria-label="global.share_on_linkedin"
+                >
+                    <i class="fab fa-linkedin" aria-hidden="true"></i>
+                </a>
+            </li>
+        
+            
+            
+            <li class="post-action hide-xs">
+                <a
+                    class="post-action-btn btn btn--default"
+                    target="new" href="http://service.weibo.com/share/share.php?&amp;title=https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E4%B8%80%E7%A7%8D%E5%A4%9A%E8%AE%A1%E5%88%92%E4%BB%BB%E5%8A%A1%E5%AE%88%E6%8A%A4%E6%A8%A1%E5%9E%8B/"
+                    title="Share on Weibo"
+                    aria-label="Share on Weibo"
+                >
+                    <i class="fab fa-weibo" aria-hidden="true"></i>
+                </a>
+            </li>
+        
+        
+            
+                <li class="post-action">
+                    <a
+                        class="post-action-btn btn btn--default"
+                        href="#gitalk"
+                        aria-label="Leave a comment"
+                    >
+                        <i class="fa fa-comment"></i>
+                    </a>
+                </li>
+            
+        
+        <li class="post-action">
+            
+                <a class="post-action-btn btn btn--default" href="#" aria-label="Back to top">
+            
+                <i class="fa fa-list" aria-hidden="true"></i>
+            </a>
+        </li>
+    </ul>
+</div>
+
+
+                </div>
+                
+    <div id="share-options-bar" class="share-options-bar" data-behavior="5">
+        <i id="btn-close-shareoptions" class="fa fa-times"></i>
+        <ul class="share-options">
+            
+                
+                
+                <li class="share-option">
+                    <a
+                        class="share-option-btn"
+                        target="new"
+                        href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E4%B8%80%E7%A7%8D%E5%A4%9A%E8%AE%A1%E5%88%92%E4%BB%BB%E5%8A%A1%E5%AE%88%E6%8A%A4%E6%A8%A1%E5%9E%8B/"
+                        aria-label="Share on Facebook"
+                    >
+                        <i class="fab fa-facebook" aria-hidden="true"></i><span>Share on Facebook</span>
+                    </a>
+                </li>
+            
+                
+                
+                <li class="share-option">
+                    <a
+                        class="share-option-btn"
+                        target="new"
+                        href="https://twitter.com/intent/tweet?text=https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E4%B8%80%E7%A7%8D%E5%A4%9A%E8%AE%A1%E5%88%92%E4%BB%BB%E5%8A%A1%E5%AE%88%E6%8A%A4%E6%A8%A1%E5%9E%8B/"
+                        aria-label="Share on Twitter"
+                    >
+                        <i class="fab fa-twitter" aria-hidden="true"></i><span>Share on Twitter</span>
+                    </a>
+                </li>
+            
+                
+                
+                <li class="share-option">
+                    <a
+                        class="share-option-btn"
+                        target="new"
+                        href="https://plus.google.com/share?url=https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E4%B8%80%E7%A7%8D%E5%A4%9A%E8%AE%A1%E5%88%92%E4%BB%BB%E5%8A%A1%E5%AE%88%E6%8A%A4%E6%A8%A1%E5%9E%8B/"
+                        aria-label="Share on Google+"
+                    >
+                        <i class="fab fa-google-plus" aria-hidden="true"></i><span>Share on Google+</span>
+                    </a>
+                </li>
+            
+                
+                
+                <li class="share-option">
+                    <a
+                        class="share-option-btn"
+                        target="new"
+                        href="https://www.linkedin.com/shareArticle?mini=true&amp;url=https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E4%B8%80%E7%A7%8D%E5%A4%9A%E8%AE%A1%E5%88%92%E4%BB%BB%E5%8A%A1%E5%AE%88%E6%8A%A4%E6%A8%A1%E5%9E%8B/"
+                        aria-label="global.share_on_linkedin"
+                    >
+                        <i class="fab fa-linkedin" aria-hidden="true"></i><span>global.share_on_linkedin</span>
+                    </a>
+                </li>
+            
+                
+                
+                <li class="share-option">
+                    <a
+                        class="share-option-btn"
+                        target="new"
+                        href="http://service.weibo.com/share/share.php?&amp;title=https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E4%B8%80%E7%A7%8D%E5%A4%9A%E8%AE%A1%E5%88%92%E4%BB%BB%E5%8A%A1%E5%AE%88%E6%8A%A4%E6%A8%A1%E5%9E%8B/"
+                        aria-label="Share on Weibo"
+                    >
+                        <i class="fab fa-weibo" aria-hidden="true"></i><span>Share on Weibo</span>
+                    </a>
+                </li>
+            
+        </ul>
+    </div>
+
+
+            
+        </div>
+        
+
+
+    
+        
+    
+
+<div id="about">
+    <div id="about-card">
+        <div id="about-btn-close">
+            <i class="fa fa-times"></i>
+        </div>
+        
+            <img id="about-card-picture" src="/assets/images/14108933.jpeg" alt="Author&#39;s picture"/>
+        
+            <h4 id="about-card-name">Joddiy Zhang</h4>
+        
+            <div id="about-card-bio"><p><a href="mailto:joddiyzhang@gmail.com">joddiyzhang@gmail.com</a></p>
+</div>
+        
+        
+            <div id="about-card-job">
+                <i class="fa fa-briefcase"></i>
+                <br/>
+                <p>Data Engineer</p>
+
+            </div>
+        
+        
+            <div id="about-card-location">
+                <i class="fa fa-map-marker-alt"></i>
+                <br/>
+                Singapore
+            </div>
+        
+    </div>
+</div>
+
+        
+        
+<div id="cover" style="background-image:url('/assets/images/cover.jpg');"></div>
+        <!--SCRIPTS-->
+
+<script src="/assets/js/script-nepw8mgf4vymyzpmseeyse3uwwhc5nmbchi76kdesjlnnpygoxxx0gguzbet.min.js"></script>
+
+<!--SCRIPTS END-->
+
+
+    
+        
+<script src="/assets/js/gitalk.js"></script>
+
+        <script type="text/javascript">
+          (function() {
+            new Gitalk({
+              clientID: 'bee9685b2dc9739b6bd5',
+              clientSecret: 'a0c683f383a94fae6d021ab932f37f7e56899410',
+              repo: 'joddiy.github.io',
+              owner: 'joddiy',
+              admin: ['joddiy'],
+              id: '2017/01/11/PHP下的一种多计划任务守护模型/',
+              ...{"language":"en","perPage":10,"distractionFreeMode":false,"enableHotKey":true,"pagerDirection":"first"}
+            }).render('gitalk')
+          })()
+        </script>
+    
+
+
+
+
+    </body>
+</html>

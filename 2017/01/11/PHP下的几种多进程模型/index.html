@@ -1,0 +1,849 @@
+
+<!DOCTYPE html>
+<html lang="en">
+    
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="generator" content="Jz Blog">
+    <title>PHP下的几种多进程模型 - Jz Blog</title>
+    <meta name="author" content="Joddiy Zhang">
+    
+    
+        <link rel="icon" href="https://joddiy.github.io/assets/images/favicon.ico">
+    
+    
+        
+            <link rel="alternate" type="application/atom+xml" title="RSS" href="/atom.xml">
+        
+    
+    <script type="application/ld+json">{"@context":"http://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"Joddiy Zhang","sameAs":["https://github.com/joddiy","https://www.linkedin.com/profile/"],"image":"14108933.jpeg"},"articleBody":"前言此部分为设计背景，可不看从16年8月至今我一直都在开发 XiaoMi 内部通用 BI 系统的 ETL 模块，第一个版本在10月初上线，目前还在不断的迭代开发中。整个 ETL 模块大致分成三个部分： \n\n前端部分：记录 ETL 的配置信息，包括数据源，脚本，执行时参数等\n多进程调度部分：包括触发器和调度器，触发器筛选可被执行的作业并封装成任务，调度器读取任务执行\nETL 执行模块：拿到任务之后根据相应参数实例化对应的数据抓取模块 E 和存储模块 L，并处理两个模块之间的数据格式转化 T\n\nETL 任务分成两种：实时任务和历史任务。设计方案需要满足的要求是：\n\n实时任务秒级触发\n历史任务实时性要求不高，但同一时间执行的历史任务数目有上限\n实时任务和历史任务出现异常时不应该影响触发器和调度器的运行\n\n因此，我研究和设计了几种 PHP 多进程模型来满足要求，设计方案为：\n\n实时任务由触发器直接分裂进程执行，且分裂后触发器应该继续触发其他任务，不应等待进程回收\n历史任务由触发器封装成任务，塞入 Redis 队列，调度器读取 Redis 队列分裂进程执行，当分裂进程达到限制数目后，等待直到有进程被回收。\n\n设计目的两种 PHP 多进程模型：\n\n父进程不等待子进程退出\n父进程记录子进程个数并及时回收，超过最大限制个数时等待\n\n一些概念在多进程模型中，如果子进程没有及时被父进程显式地回收，会产生僵尸进程问题，导致大量进程ID 和内存被占用。这里介绍一些基本概念：\n\n僵尸进程\n\n如果子进程退出后一直不被父进程显式地获取退出状态，那么就会一直占用进程号，资源也不会被释放\n\n孤儿进程\n\n父进程退出后，子进程还在运行，此时子进程就会被 init 进程（进程号为1）收养，并由 init 进程完成回收工作\n一些函数\nint pcntl_fork ( void )\n\n在当前进程当前位置产生分支（子进程），并返回 int 值，父子进程都从 fork 位置继续执行，父进程返回值为子进程ID号，子进程返回值为0，返回值小于0时异常。\n\nint pcntl_wait ( int &amp;$status [, int $options = 0 ] )\n\nwait 函数挂起当前进程的执行直到一个子进程退出或接收到一个信号要求中断当前进程或调用一个信号处理函数。 如果一个子进程在调用此函数时已经退出（俗称僵尸进程），此函数立刻返回。子进程使用的所有系统资源将 被释放。wait3 级别下提供 options 选项：\n\nWNOHANG -&gt; 如果没有子进程退出立刻返回。\nWUNTRACED -&gt; 子进程已经退出并且其状态未报告时返回。\n\n模型1父进程不等待子进程退出\n方案采用两层 fork 模型，首先父进程分裂出一代子进程后，一代子进程再次分裂出二代子进程，一代子进程直接退出，使二代子进程成为孤儿进程，从而被 init 进程收养。此时父进程继续执行其他逻辑不需要关心回收问题，二代子进程结束后会由 init 进程回收。\n结构图\n代码123456789101112131415161718192021&lt;?php$pid = pcntl_fork();if ($pid &lt; 0) &#123;    die('Fork the process failed.');&#125; else if ($pid == 0) &#123;    closeAll();//父进程关闭所有连接    $pid = pcntl_fork();    if ($pid &lt; 0) &#123;        die('Fork the process failed.');    &#125; else if ($pid &gt; 0) &#123;        // 二代父进程直接退出，使二代子进程成为孤儿进程，从而被 init 收养        exit(0);    &#125; else &#123;        openAll();//子进程打开所有连接        run();// 子进程执行统计        exit(0);    &#125;&#125; else &#123;    openAll();//父进程打开所有连接    pcntl_wait($status); //一代父进程回收二代父进程后继续运行&#125;\n\n模型2父进程记录子进程个数并及时回收，超过最大限制个数时等待\n方案每轮循环先回收已经报告退出状态的子进程（非挂起模式，即如果没有子进程可回收则继续执行），然后判断子进程数目是否超过限制，如果超过则等待1s后继续循环，否则分裂子进程执行统计。\n代码12345678910111213141516171819202122232425&lt;?php$count = 0;$maxProcesses = 20;//最大子进程数while (true) &#123;    // 非挂起模式下回收已经退出的子进程    while (pcntl_wait($status, WNOHANG) &gt; 0)        $count--;    // 子进程数目超过限制时等待    if ($count &gt;= $maxProcesses) &#123;        sleep(1);    &#125; else &#123;        $count++;        closeAll();//父进程关闭所有连接        $pid = pcntl_fork();        if ($pid &lt; 0) &#123;            die('Fork the process failed.');        &#125; else if ($pid == 0) &#123;            openAll();//子进程打开所有连接            run();// 子进程执行统计            exit(0);        &#125; else &#123;             openAll();//父进程打开所有连接        &#125;    &#125;&#125;\n一些关于进程信号通讯的补充\nbool pcntl_signal ( int $signo , callable|int $handler [, bool $restart_syscalls = true ] )\n\n为信号 signo 安装一个信号处理器。指明接收到某个特定信号时，执行某个方法。\n\nbool pcntl_signal_dispatch ( void )\n\n检查发送给自己的信号并调用先前 pcntl_signal 安装的信号处理器。\n\nbool posix_kill ( int $pid , int $sig )\n\n向某个进程发送某个特定信号。\n在进程模型中的使用待补充\n备注数据库和 Redis 连接在多进程下会产生串流的情况，所以在代码中，父进程分裂前会先关闭所有连接，子进程产生后，父子进程各自再打开新的连接。\n后记暂时没想到\n","dateCreated":"2017-01-11T17:02:13+08:00","dateModified":"2020-05-11T15:03:37+08:00","datePublished":"2017-01-11T17:02:13+08:00","description":"A customed PHP multi-process model","headline":"PHP下的几种多进程模型","image":["https://cdn.iconscout.com/icon/free/png-256/php-27-226042.png","https://www.thoughtco.com/thmb/_3C13Ig9g4b1d0Xps3CJi5dexIc=/1333x1000/smart/filters:no_upscale()/PHP-code-58d2d5803df78c51623a6ce2.jpg"],"mainEntityOfPage":{"@type":"WebPage","@id":"https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E5%87%A0%E7%A7%8D%E5%A4%9A%E8%BF%9B%E7%A8%8B%E6%A8%A1%E5%9E%8B/"},"publisher":{"@type":"Organization","name":"Joddiy Zhang","sameAs":["https://github.com/joddiy","https://www.linkedin.com/profile/"],"image":"14108933.jpeg","logo":{"@type":"ImageObject","url":"14108933.jpeg"}},"url":"https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E5%87%A0%E7%A7%8D%E5%A4%9A%E8%BF%9B%E7%A8%8B%E6%A8%A1%E5%9E%8B/","keywords":"PHP, 工作向, 模型设计","thumbnailUrl":"https://cdn.iconscout.com/icon/free/png-256/php-27-226042.png"}</script>
+    <meta name="description" content="A customed PHP multi-process model">
+<meta property="og:type" content="blog">
+<meta property="og:title" content="PHP下的几种多进程模型">
+<meta property="og:url" content="https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E5%87%A0%E7%A7%8D%E5%A4%9A%E8%BF%9B%E7%A8%8B%E6%A8%A1%E5%9E%8B/index.html">
+<meta property="og:site_name" content="Jz Blog">
+<meta property="og:description" content="A customed PHP multi-process model">
+<meta property="og:locale" content="en_US">
+<meta property="og:image" content="https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E5%87%A0%E7%A7%8D%E5%A4%9A%E8%BF%9B%E7%A8%8B%E6%A8%A1%E5%9E%8B/image1.png">
+<meta property="article:published_time" content="2017-01-11T09:02:13.000Z">
+<meta property="article:modified_time" content="2020-05-11T07:03:37.514Z">
+<meta property="article:author" content="Joddiy Zhang">
+<meta property="article:tag" content="PHP">
+<meta property="article:tag" content="工作向">
+<meta property="article:tag" content="模型设计">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E5%87%A0%E7%A7%8D%E5%A4%9A%E8%BF%9B%E7%A8%8B%E6%A8%A1%E5%9E%8B/image1.png">
+    
+    
+        
+    
+    
+        <meta property="og:image" content="https://joddiy.github.io/assets/images/14108933.jpeg"/>
+    
+    
+        <meta property="og:image" content="https://cdn.iconscout.com/icon/free/png-256/php-27-226042.png"/>
+        <meta class="swiftype" name="image" data-type="enum" content="https://cdn.iconscout.com/icon/free/png-256/php-27-226042.png"/>
+    
+    
+        <meta property="og:image" content="https://www.thoughtco.com/thmb/_3C13Ig9g4b1d0Xps3CJi5dexIc=/1333x1000/smart/filters:no_upscale()/PHP-code-58d2d5803df78c51623a6ce2.jpg"/>
+        <meta class="swiftype" name="image" data-type="enum" content="https://www.thoughtco.com/thmb/_3C13Ig9g4b1d0Xps3CJi5dexIc=/1333x1000/smart/filters:no_upscale()/PHP-code-58d2d5803df78c51623a6ce2.jpg"/>
+    
+    
+    <!--STYLES-->
+    
+<link rel="stylesheet" href="/assets/css/style-k2ygfmkptjuemotlwbkrcqm19wuozptgnhknynmmndcykyqouv6n8vvzzybd.min.css">
+
+    <!--STYLES END-->
+    
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-109736487-1"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+
+        gtag('config', 'UA-109736487-1');
+    </script>
+
+
+    
+
+    
+        
+            
+<link rel="stylesheet" href="/assets/css/gitalk.css">
+
+        
+    
+</head>
+
+    <body>
+        <div id="blog">
+            <!-- Define author's picture -->
+
+
+    
+        
+            
+        
+    
+
+<header id="header" data-behavior="5">
+    <i id="btn-open-sidebar" class="fa fa-lg fa-bars"></i>
+    <div class="header-title">
+        <a
+            class="header-title-link"
+            href="/%20"
+            aria-label=""
+        >
+            Jz Blog
+        </a>
+    </div>
+    
+        
+            <a
+                class="header-right-picture "
+                href="#about"
+                aria-label="Open the link: /#about"
+            >
+        
+        
+            <img class="header-picture" src="/assets/images/14108933.jpeg" alt="Author&#39;s picture"/>
+        
+        </a>
+    
+</header>
+
+            <!-- Define author's picture -->
+
+
+
+        
+    
+
+<nav id="sidebar" data-behavior="5">
+    <div class="sidebar-container">
+        
+            <div class="sidebar-profile">
+                <a
+                    href="/#about"
+                    aria-label="Read more about the author"
+                >
+                    <img class="sidebar-profile-picture" src="/assets/images/14108933.jpeg" alt="Author&#39;s picture"/>
+                </a>
+                <h4 class="sidebar-profile-name">Joddiy Zhang</h4>
+                
+                    <h5 class="sidebar-profile-bio"><p><a href="mailto:joddiyzhang@gmail.com">joddiyzhang@gmail.com</a></p>
+</h5>
+                
+            </div>
+        
+        
+            <ul class="sidebar-buttons">
+            
+                <li class="sidebar-button">
+                    
+                        <a
+                            class="sidebar-button-link "
+                            href="/"
+                            
+                            rel="noopener"
+                            title="Home"
+                        >
+                        <i class="sidebar-button-icon fa fa-home" aria-hidden="true"></i>
+                        <span class="sidebar-button-desc">Home</span>
+                    </a>
+            </li>
+            
+                <li class="sidebar-button">
+                    
+                        <a
+                            class="sidebar-button-link "
+                            href="/all-categories"
+                            
+                            rel="noopener"
+                            title="Categories"
+                        >
+                        <i class="sidebar-button-icon fa fa-bookmark" aria-hidden="true"></i>
+                        <span class="sidebar-button-desc">Categories</span>
+                    </a>
+            </li>
+            
+                <li class="sidebar-button">
+                    
+                        <a
+                            class="sidebar-button-link "
+                            href="/all-tags"
+                            
+                            rel="noopener"
+                            title="Tags"
+                        >
+                        <i class="sidebar-button-icon fa fa-tags" aria-hidden="true"></i>
+                        <span class="sidebar-button-desc">Tags</span>
+                    </a>
+            </li>
+            
+                <li class="sidebar-button">
+                    
+                        <a
+                            class="sidebar-button-link "
+                            href="/all-archives"
+                            
+                            rel="noopener"
+                            title="Archives"
+                        >
+                        <i class="sidebar-button-icon fa fa-archive" aria-hidden="true"></i>
+                        <span class="sidebar-button-desc">Archives</span>
+                    </a>
+            </li>
+            
+                <li class="sidebar-button">
+                    
+                        <a
+                            class="sidebar-button-link open-algolia-search"
+                            href="#search"
+                            
+                            rel="noopener"
+                            title="Search"
+                        >
+                        <i class="sidebar-button-icon fa fa-search" aria-hidden="true"></i>
+                        <span class="sidebar-button-desc">Search</span>
+                    </a>
+            </li>
+            
+                <li class="sidebar-button">
+                    
+                        <a
+                            class="sidebar-button-link "
+                            href="#about"
+                            
+                            rel="noopener"
+                            title="About"
+                        >
+                        <i class="sidebar-button-icon fa fa-question" aria-hidden="true"></i>
+                        <span class="sidebar-button-desc">About</span>
+                    </a>
+            </li>
+            
+        </ul>
+        
+            <ul class="sidebar-buttons">
+            
+                <li class="sidebar-button">
+                    
+                        <a
+                            class="sidebar-button-link "
+                            href="https://github.com/joddiy"
+                            
+                                target="_blank"
+                            
+                            rel="noopener"
+                            title="GitHub"
+                        >
+                        <i class="sidebar-button-icon fab fa-github" aria-hidden="true"></i>
+                        <span class="sidebar-button-desc">GitHub</span>
+                    </a>
+            </li>
+            
+                <li class="sidebar-button">
+                    
+                        <a
+                            class="sidebar-button-link "
+                            href="https://www.linkedin.com/profile/"
+                            
+                                target="_blank"
+                            
+                            rel="noopener"
+                            title="LinkedIn"
+                        >
+                        <i class="sidebar-button-icon fab fa-linkedin" aria-hidden="true"></i>
+                        <span class="sidebar-button-desc">LinkedIn</span>
+                    </a>
+            </li>
+            
+        </ul>
+        
+            <ul class="sidebar-buttons">
+            
+                <li class="sidebar-button">
+                    
+                        <a
+                            class="sidebar-button-link "
+                            href="/atom.xml"
+                            
+                            rel="noopener"
+                            title="RSS"
+                        >
+                        <i class="sidebar-button-icon fa fa-rss" aria-hidden="true"></i>
+                        <span class="sidebar-button-desc">RSS</span>
+                    </a>
+            </li>
+            
+        </ul>
+        
+    </div>
+</nav>
+
+            
+        <div class="post-header-cover
+                    text-center
+                    post-header-cover--partial"
+             style="background-image:url('https://www.thoughtco.com/thmb/_3C13Ig9g4b1d0Xps3CJi5dexIc=/1333x1000/smart/filters:no_upscale()/PHP-code-58d2d5803df78c51623a6ce2.jpg');"
+             data-behavior="5">
+            
+                <div class="post-header main-content-wrap text-center">
+    
+        <h1 class="post-title">
+            PHP下的几种多进程模型
+        </h1>
+    
+    
+        <div class="post-meta">
+    <time datetime="2017-01-11T17:02:13+08:00">
+	
+		    Jan 11, 2017
+    	
+    </time>
+    
+        <span>in </span>
+        
+    <a class="category-link" href="/categories/Tool/">Tool</a>
+
+
+    
+</div>
+
+    
+</div>
+
+            
+        </div>
+
+            <div id="main" data-behavior="5"
+                 class="hasCover
+                        hasCoverMetaIn
+                        ">
+                
+<article class="post">
+    
+    
+    <div class="post-content markdown">
+        <div class="main-content-wrap">
+            <h2 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h2><p><em>此部分为设计背景，可不看</em><br>从16年8月至今我一直都在开发 XiaoMi 内部通用 BI 系统的 ETL 模块，第一个版本在10月初上线，目前还在不断的迭代开发中。整个 ETL 模块大致分成三个部分： </p>
+<ul>
+<li>前端部分：记录 ETL 的配置信息，包括数据源，脚本，执行时参数等</li>
+<li>多进程调度部分：包括触发器和调度器，触发器筛选可被执行的作业并封装成任务，调度器读取任务执行</li>
+<li>ETL 执行模块：拿到任务之后根据相应参数实例化对应的数据抓取模块 E 和存储模块 L，并处理两个模块之间的数据格式转化 T</li>
+</ul>
+<p>ETL 任务分成两种：实时任务和历史任务。设计方案需要满足的要求是：</p>
+<ul>
+<li>实时任务秒级触发</li>
+<li>历史任务实时性要求不高，但同一时间执行的历史任务数目有上限</li>
+<li>实时任务和历史任务出现异常时不应该影响触发器和调度器的运行</li>
+</ul>
+<p>因此，我研究和设计了几种 PHP 多进程模型来满足要求，设计方案为：</p>
+<ul>
+<li>实时任务由触发器直接分裂进程执行，且分裂后触发器应该继续触发其他任务，不应等待进程回收</li>
+<li>历史任务由触发器封装成任务，塞入 Redis 队列，调度器读取 Redis 队列分裂进程执行，当分裂进程达到限制数目后，等待直到有进程被回收。</li>
+</ul>
+<h2 id="设计目的"><a href="#设计目的" class="headerlink" title="设计目的"></a>设计目的</h2><p>两种 PHP 多进程模型：</p>
+<ol>
+<li>父进程不等待子进程退出</li>
+<li>父进程记录子进程个数并及时回收，超过最大限制个数时等待</li>
+</ol>
+<h2 id="一些概念"><a href="#一些概念" class="headerlink" title="一些概念"></a>一些概念</h2><p>在多进程模型中，如果子进程没有及时被父进程显式地回收，会产生僵尸进程问题，导致大量进程ID 和内存被占用。这里介绍一些基本概念：</p>
+<blockquote>
+<p>僵尸进程</p>
+</blockquote>
+<p>如果子进程退出后一直不被父进程显式地获取退出状态，那么就会一直占用进程号，资源也不会被释放</p>
+<blockquote>
+<p>孤儿进程</p>
+</blockquote>
+<p>父进程退出后，子进程还在运行，此时子进程就会被 init 进程（进程号为1）收养，并由 init 进程完成回收工作</p>
+<h2 id="一些函数"><a href="#一些函数" class="headerlink" title="一些函数"></a>一些函数</h2><blockquote>
+<p>int pcntl_fork ( void )</p>
+</blockquote>
+<p>在当前进程当前位置产生分支（子进程），并返回 int 值，父子进程都从 fork 位置继续执行，父进程返回值为子进程ID号，子进程返回值为0，返回值小于0时异常。</p>
+<blockquote>
+<p>int pcntl_wait ( int &amp;$status [, int $options = 0 ] )</p>
+</blockquote>
+<p>wait 函数挂起当前进程的执行直到一个子进程退出或接收到一个信号要求中断当前进程或调用一个信号处理函数。 如果一个子进程在调用此函数时已经退出（俗称僵尸进程），此函数立刻返回。子进程使用的所有系统资源将 被释放。wait3 级别下提供 options 选项：</p>
+<ul>
+<li>WNOHANG -&gt; 如果没有子进程退出立刻返回。</li>
+<li>WUNTRACED -&gt; 子进程已经退出并且其状态未报告时返回。</li>
+</ul>
+<h2 id="模型1"><a href="#模型1" class="headerlink" title="模型1"></a>模型1</h2><p>父进程不等待子进程退出</p>
+<h4 id="方案"><a href="#方案" class="headerlink" title="方案"></a>方案</h4><p>采用两层 fork 模型，首先父进程分裂出一代子进程后，一代子进程再次分裂出二代子进程，一代子进程直接退出，使二代子进程成为孤儿进程，从而被 init 进程收养。此时父进程继续执行其他逻辑不需要关心回收问题，二代子进程结束后会由 init 进程回收。</p>
+<h4 id="结构图"><a href="#结构图" class="headerlink" title="结构图"></a>结构图</h4><p><img src="image1.png" alt="流程图"></p>
+<h4 id="代码"><a href="#代码" class="headerlink" title="代码"></a>代码</h4><figure class="highlight php"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&lt;?php</span></span><br><span class="line">$pid = pcntl_fork();</span><br><span class="line"><span class="keyword">if</span> ($pid &lt; <span class="number">0</span>) &#123;</span><br><span class="line">    <span class="keyword">die</span>(<span class="string">'Fork the process failed.'</span>);</span><br><span class="line">&#125; <span class="keyword">else</span> <span class="keyword">if</span> ($pid == <span class="number">0</span>) &#123;</span><br><span class="line">    closeAll();<span class="comment">//父进程关闭所有连接</span></span><br><span class="line">    $pid = pcntl_fork();</span><br><span class="line">    <span class="keyword">if</span> ($pid &lt; <span class="number">0</span>) &#123;</span><br><span class="line">        <span class="keyword">die</span>(<span class="string">'Fork the process failed.'</span>);</span><br><span class="line">    &#125; <span class="keyword">else</span> <span class="keyword">if</span> ($pid &gt; <span class="number">0</span>) &#123;</span><br><span class="line">        <span class="comment">// 二代父进程直接退出，使二代子进程成为孤儿进程，从而被 init 收养</span></span><br><span class="line">        <span class="keyword">exit</span>(<span class="number">0</span>);</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        openAll();<span class="comment">//子进程打开所有连接</span></span><br><span class="line">        run();<span class="comment">// 子进程执行统计</span></span><br><span class="line">        <span class="keyword">exit</span>(<span class="number">0</span>);</span><br><span class="line">    &#125;</span><br><span class="line">&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">    openAll();<span class="comment">//父进程打开所有连接</span></span><br><span class="line">    pcntl_wait($status); <span class="comment">//一代父进程回收二代父进程后继续运行</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="模型2"><a href="#模型2" class="headerlink" title="模型2"></a>模型2</h2><p>父进程记录子进程个数并及时回收，超过最大限制个数时等待</p>
+<h4 id="方案-1"><a href="#方案-1" class="headerlink" title="方案"></a>方案</h4><p>每轮循环先回收已经报告退出状态的子进程（非挂起模式，即如果没有子进程可回收则继续执行），然后判断子进程数目是否超过限制，如果超过则等待1s后继续循环，否则分裂子进程执行统计。</p>
+<h4 id="代码-1"><a href="#代码-1" class="headerlink" title="代码"></a>代码</h4><figure class="highlight php"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&lt;?php</span></span><br><span class="line">$count = <span class="number">0</span>;</span><br><span class="line">$maxProcesses = <span class="number">20</span>;<span class="comment">//最大子进程数</span></span><br><span class="line"><span class="keyword">while</span> (<span class="keyword">true</span>) &#123;</span><br><span class="line">    <span class="comment">// 非挂起模式下回收已经退出的子进程</span></span><br><span class="line">    <span class="keyword">while</span> (pcntl_wait($status, WNOHANG) &gt; <span class="number">0</span>)</span><br><span class="line">        $count--;</span><br><span class="line">    <span class="comment">// 子进程数目超过限制时等待</span></span><br><span class="line">    <span class="keyword">if</span> ($count &gt;= $maxProcesses) &#123;</span><br><span class="line">        sleep(<span class="number">1</span>);</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        $count++;</span><br><span class="line">        closeAll();<span class="comment">//父进程关闭所有连接</span></span><br><span class="line">        $pid = pcntl_fork();</span><br><span class="line">        <span class="keyword">if</span> ($pid &lt; <span class="number">0</span>) &#123;</span><br><span class="line">            <span class="keyword">die</span>(<span class="string">'Fork the process failed.'</span>);</span><br><span class="line">        &#125; <span class="keyword">else</span> <span class="keyword">if</span> ($pid == <span class="number">0</span>) &#123;</span><br><span class="line">            openAll();<span class="comment">//子进程打开所有连接</span></span><br><span class="line">            run();<span class="comment">// 子进程执行统计</span></span><br><span class="line">            <span class="keyword">exit</span>(<span class="number">0</span>);</span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">             openAll();<span class="comment">//父进程打开所有连接</span></span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h2 id="一些关于进程信号通讯的补充"><a href="#一些关于进程信号通讯的补充" class="headerlink" title="一些关于进程信号通讯的补充"></a>一些关于进程信号通讯的补充</h2><blockquote>
+<p>bool pcntl_signal ( int $signo , callable|int $handler [, bool $restart_syscalls = true ] )</p>
+</blockquote>
+<p>为信号 signo 安装一个信号处理器。指明接收到某个特定信号时，执行某个方法。</p>
+<blockquote>
+<p>bool pcntl_signal_dispatch ( void )</p>
+</blockquote>
+<p>检查发送给自己的信号并调用先前 pcntl_signal 安装的信号处理器。</p>
+<blockquote>
+<p>bool posix_kill ( int $pid , int $sig )</p>
+</blockquote>
+<p>向某个进程发送某个特定信号。</p>
+<h4 id="在进程模型中的使用"><a href="#在进程模型中的使用" class="headerlink" title="在进程模型中的使用"></a>在进程模型中的使用</h4><p><em>待补充</em></p>
+<h2 id="备注"><a href="#备注" class="headerlink" title="备注"></a>备注</h2><p>数据库和 Redis 连接在多进程下会产生串流的情况，所以在代码中，父进程分裂前会先关闭所有连接，子进程产生后，父子进程各自再打开新的连接。</p>
+<h2 id="后记"><a href="#后记" class="headerlink" title="后记"></a>后记</h2><p>暂时没想到</p>
+
+            
+
+
+        </div>
+    </div>
+    <div id="post-footer" class="post-footer main-content-wrap">
+        
+            <div class="post-footer-tags">
+                <span class="text-color-light text-small">TAGGED IN</span><br/>
+                
+    <a class="tag tag--primary tag--small t-link" href="/tags/PHP/" rel="tag">PHP</a> <a class="tag tag--primary tag--small t-link" href="/tags/%E5%B7%A5%E4%BD%9C%E5%90%91/" rel="tag">工作向</a> <a class="tag tag--primary tag--small t-link" href="/tags/%E6%A8%A1%E5%9E%8B%E8%AE%BE%E8%AE%A1/" rel="tag">模型设计</a>
+
+            </div>
+        
+        
+            <div class="post-actions-wrap">
+    <nav>
+        <ul class="post-actions post-action-nav">
+            <li class="post-action">
+                
+                    
+                <a
+                    class="post-action-btn btn btn--default tooltip--top"
+                    href="/2017/10/13/%E5%88%A9%E7%94%A8%E5%AD%90%E6%9F%A5%E8%AF%A2%E4%BC%98%E5%8C%96SQL/"
+                    data-tooltip="利用子查询优化SQL"
+                    aria-label="PREVIOUS: 利用子查询优化SQL"
+                >
+                    
+                        <i class="fa fa-angle-left" aria-hidden="true"></i>
+                        <span class="hide-xs hide-sm text-small icon-ml">PREVIOUS</span>
+                    </a>
+            </li>
+            <li class="post-action">
+                
+                    
+                <a
+                    class="post-action-btn btn btn--default tooltip--top"
+                    href="/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E4%B8%80%E7%A7%8D%E5%A4%9A%E8%AE%A1%E5%88%92%E4%BB%BB%E5%8A%A1%E5%AE%88%E6%8A%A4%E6%A8%A1%E5%9E%8B/"
+                    data-tooltip="PHP下的一种多计划任务守护模型"
+                    aria-label="NEXT: PHP下的一种多计划任务守护模型"
+                >
+                    
+                        <span class="hide-xs hide-sm text-small icon-mr">NEXT</span>
+                        <i class="fa fa-angle-right" aria-hidden="true"></i>
+                    </a>
+            </li>
+        </ul>
+    </nav>
+    <ul class="post-actions post-action-share">
+        <li class="post-action hide-lg hide-md hide-sm">
+            <a
+                class="post-action-btn btn btn--default btn-open-shareoptions"
+                href="#btn-open-shareoptions"
+                aria-label="Share this post"
+            >
+                <i class="fa fa-share-alt" aria-hidden="true"></i>
+            </a>
+        </li>
+        
+            
+            
+            <li class="post-action hide-xs">
+                <a
+                    class="post-action-btn btn btn--default"
+                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E5%87%A0%E7%A7%8D%E5%A4%9A%E8%BF%9B%E7%A8%8B%E6%A8%A1%E5%9E%8B/"
+                    title="Share on Facebook"
+                    aria-label="Share on Facebook"
+                >
+                    <i class="fab fa-facebook" aria-hidden="true"></i>
+                </a>
+            </li>
+        
+            
+            
+            <li class="post-action hide-xs">
+                <a
+                    class="post-action-btn btn btn--default"
+                    target="new" href="https://twitter.com/intent/tweet?text=https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E5%87%A0%E7%A7%8D%E5%A4%9A%E8%BF%9B%E7%A8%8B%E6%A8%A1%E5%9E%8B/"
+                    title="Share on Twitter"
+                    aria-label="Share on Twitter"
+                >
+                    <i class="fab fa-twitter" aria-hidden="true"></i>
+                </a>
+            </li>
+        
+            
+            
+            <li class="post-action hide-xs">
+                <a
+                    class="post-action-btn btn btn--default"
+                    target="new" href="https://plus.google.com/share?url=https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E5%87%A0%E7%A7%8D%E5%A4%9A%E8%BF%9B%E7%A8%8B%E6%A8%A1%E5%9E%8B/"
+                    title="Share on Google+"
+                    aria-label="Share on Google+"
+                >
+                    <i class="fab fa-google-plus" aria-hidden="true"></i>
+                </a>
+            </li>
+        
+            
+            
+            <li class="post-action hide-xs">
+                <a
+                    class="post-action-btn btn btn--default"
+                    target="new" href="https://www.linkedin.com/shareArticle?mini=true&amp;url=https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E5%87%A0%E7%A7%8D%E5%A4%9A%E8%BF%9B%E7%A8%8B%E6%A8%A1%E5%9E%8B/"
+                    title="global.share_on_linkedin"
+                    aria-label="global.share_on_linkedin"
+                >
+                    <i class="fab fa-linkedin" aria-hidden="true"></i>
+                </a>
+            </li>
+        
+            
+            
+            <li class="post-action hide-xs">
+                <a
+                    class="post-action-btn btn btn--default"
+                    target="new" href="http://service.weibo.com/share/share.php?&amp;title=https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E5%87%A0%E7%A7%8D%E5%A4%9A%E8%BF%9B%E7%A8%8B%E6%A8%A1%E5%9E%8B/"
+                    title="Share on Weibo"
+                    aria-label="Share on Weibo"
+                >
+                    <i class="fab fa-weibo" aria-hidden="true"></i>
+                </a>
+            </li>
+        
+        
+            
+                <li class="post-action">
+                    <a
+                        class="post-action-btn btn btn--default"
+                        href="#gitalk"
+                        aria-label="Leave a comment"
+                    >
+                        <i class="fa fa-comment"></i>
+                    </a>
+                </li>
+            
+        
+        <li class="post-action">
+            
+                <a class="post-action-btn btn btn--default" href="#" aria-label="Back to top">
+            
+                <i class="fa fa-list" aria-hidden="true"></i>
+            </a>
+        </li>
+    </ul>
+</div>
+
+
+        
+        
+            
+                <div id="gitalk"></div>
+
+            
+        
+    </div>
+</article>
+
+
+
+                <footer id="footer" class="main-content-wrap">
+    <span class="copyrights">
+        Copyrights &copy; 2020 Joddiy Zhang. All Rights Reserved.
+    </span>
+</footer>
+
+            </div>
+            
+                <div id="bottom-bar" class="post-bottom-bar" data-behavior="5">
+                    <div class="post-actions-wrap">
+    <nav>
+        <ul class="post-actions post-action-nav">
+            <li class="post-action">
+                
+                    
+                <a
+                    class="post-action-btn btn btn--default tooltip--top"
+                    href="/2017/10/13/%E5%88%A9%E7%94%A8%E5%AD%90%E6%9F%A5%E8%AF%A2%E4%BC%98%E5%8C%96SQL/"
+                    data-tooltip="利用子查询优化SQL"
+                    aria-label="PREVIOUS: 利用子查询优化SQL"
+                >
+                    
+                        <i class="fa fa-angle-left" aria-hidden="true"></i>
+                        <span class="hide-xs hide-sm text-small icon-ml">PREVIOUS</span>
+                    </a>
+            </li>
+            <li class="post-action">
+                
+                    
+                <a
+                    class="post-action-btn btn btn--default tooltip--top"
+                    href="/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E4%B8%80%E7%A7%8D%E5%A4%9A%E8%AE%A1%E5%88%92%E4%BB%BB%E5%8A%A1%E5%AE%88%E6%8A%A4%E6%A8%A1%E5%9E%8B/"
+                    data-tooltip="PHP下的一种多计划任务守护模型"
+                    aria-label="NEXT: PHP下的一种多计划任务守护模型"
+                >
+                    
+                        <span class="hide-xs hide-sm text-small icon-mr">NEXT</span>
+                        <i class="fa fa-angle-right" aria-hidden="true"></i>
+                    </a>
+            </li>
+        </ul>
+    </nav>
+    <ul class="post-actions post-action-share">
+        <li class="post-action hide-lg hide-md hide-sm">
+            <a
+                class="post-action-btn btn btn--default btn-open-shareoptions"
+                href="#btn-open-shareoptions"
+                aria-label="Share this post"
+            >
+                <i class="fa fa-share-alt" aria-hidden="true"></i>
+            </a>
+        </li>
+        
+            
+            
+            <li class="post-action hide-xs">
+                <a
+                    class="post-action-btn btn btn--default"
+                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E5%87%A0%E7%A7%8D%E5%A4%9A%E8%BF%9B%E7%A8%8B%E6%A8%A1%E5%9E%8B/"
+                    title="Share on Facebook"
+                    aria-label="Share on Facebook"
+                >
+                    <i class="fab fa-facebook" aria-hidden="true"></i>
+                </a>
+            </li>
+        
+            
+            
+            <li class="post-action hide-xs">
+                <a
+                    class="post-action-btn btn btn--default"
+                    target="new" href="https://twitter.com/intent/tweet?text=https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E5%87%A0%E7%A7%8D%E5%A4%9A%E8%BF%9B%E7%A8%8B%E6%A8%A1%E5%9E%8B/"
+                    title="Share on Twitter"
+                    aria-label="Share on Twitter"
+                >
+                    <i class="fab fa-twitter" aria-hidden="true"></i>
+                </a>
+            </li>
+        
+            
+            
+            <li class="post-action hide-xs">
+                <a
+                    class="post-action-btn btn btn--default"
+                    target="new" href="https://plus.google.com/share?url=https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E5%87%A0%E7%A7%8D%E5%A4%9A%E8%BF%9B%E7%A8%8B%E6%A8%A1%E5%9E%8B/"
+                    title="Share on Google+"
+                    aria-label="Share on Google+"
+                >
+                    <i class="fab fa-google-plus" aria-hidden="true"></i>
+                </a>
+            </li>
+        
+            
+            
+            <li class="post-action hide-xs">
+                <a
+                    class="post-action-btn btn btn--default"
+                    target="new" href="https://www.linkedin.com/shareArticle?mini=true&amp;url=https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E5%87%A0%E7%A7%8D%E5%A4%9A%E8%BF%9B%E7%A8%8B%E6%A8%A1%E5%9E%8B/"
+                    title="global.share_on_linkedin"
+                    aria-label="global.share_on_linkedin"
+                >
+                    <i class="fab fa-linkedin" aria-hidden="true"></i>
+                </a>
+            </li>
+        
+            
+            
+            <li class="post-action hide-xs">
+                <a
+                    class="post-action-btn btn btn--default"
+                    target="new" href="http://service.weibo.com/share/share.php?&amp;title=https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E5%87%A0%E7%A7%8D%E5%A4%9A%E8%BF%9B%E7%A8%8B%E6%A8%A1%E5%9E%8B/"
+                    title="Share on Weibo"
+                    aria-label="Share on Weibo"
+                >
+                    <i class="fab fa-weibo" aria-hidden="true"></i>
+                </a>
+            </li>
+        
+        
+            
+                <li class="post-action">
+                    <a
+                        class="post-action-btn btn btn--default"
+                        href="#gitalk"
+                        aria-label="Leave a comment"
+                    >
+                        <i class="fa fa-comment"></i>
+                    </a>
+                </li>
+            
+        
+        <li class="post-action">
+            
+                <a class="post-action-btn btn btn--default" href="#" aria-label="Back to top">
+            
+                <i class="fa fa-list" aria-hidden="true"></i>
+            </a>
+        </li>
+    </ul>
+</div>
+
+
+                </div>
+                
+    <div id="share-options-bar" class="share-options-bar" data-behavior="5">
+        <i id="btn-close-shareoptions" class="fa fa-times"></i>
+        <ul class="share-options">
+            
+                
+                
+                <li class="share-option">
+                    <a
+                        class="share-option-btn"
+                        target="new"
+                        href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E5%87%A0%E7%A7%8D%E5%A4%9A%E8%BF%9B%E7%A8%8B%E6%A8%A1%E5%9E%8B/"
+                        aria-label="Share on Facebook"
+                    >
+                        <i class="fab fa-facebook" aria-hidden="true"></i><span>Share on Facebook</span>
+                    </a>
+                </li>
+            
+                
+                
+                <li class="share-option">
+                    <a
+                        class="share-option-btn"
+                        target="new"
+                        href="https://twitter.com/intent/tweet?text=https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E5%87%A0%E7%A7%8D%E5%A4%9A%E8%BF%9B%E7%A8%8B%E6%A8%A1%E5%9E%8B/"
+                        aria-label="Share on Twitter"
+                    >
+                        <i class="fab fa-twitter" aria-hidden="true"></i><span>Share on Twitter</span>
+                    </a>
+                </li>
+            
+                
+                
+                <li class="share-option">
+                    <a
+                        class="share-option-btn"
+                        target="new"
+                        href="https://plus.google.com/share?url=https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E5%87%A0%E7%A7%8D%E5%A4%9A%E8%BF%9B%E7%A8%8B%E6%A8%A1%E5%9E%8B/"
+                        aria-label="Share on Google+"
+                    >
+                        <i class="fab fa-google-plus" aria-hidden="true"></i><span>Share on Google+</span>
+                    </a>
+                </li>
+            
+                
+                
+                <li class="share-option">
+                    <a
+                        class="share-option-btn"
+                        target="new"
+                        href="https://www.linkedin.com/shareArticle?mini=true&amp;url=https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E5%87%A0%E7%A7%8D%E5%A4%9A%E8%BF%9B%E7%A8%8B%E6%A8%A1%E5%9E%8B/"
+                        aria-label="global.share_on_linkedin"
+                    >
+                        <i class="fab fa-linkedin" aria-hidden="true"></i><span>global.share_on_linkedin</span>
+                    </a>
+                </li>
+            
+                
+                
+                <li class="share-option">
+                    <a
+                        class="share-option-btn"
+                        target="new"
+                        href="http://service.weibo.com/share/share.php?&amp;title=https://joddiy.github.io/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E5%87%A0%E7%A7%8D%E5%A4%9A%E8%BF%9B%E7%A8%8B%E6%A8%A1%E5%9E%8B/"
+                        aria-label="Share on Weibo"
+                    >
+                        <i class="fab fa-weibo" aria-hidden="true"></i><span>Share on Weibo</span>
+                    </a>
+                </li>
+            
+        </ul>
+    </div>
+
+
+            
+        </div>
+        
+
+
+    
+        
+    
+
+<div id="about">
+    <div id="about-card">
+        <div id="about-btn-close">
+            <i class="fa fa-times"></i>
+        </div>
+        
+            <img id="about-card-picture" src="/assets/images/14108933.jpeg" alt="Author&#39;s picture"/>
+        
+            <h4 id="about-card-name">Joddiy Zhang</h4>
+        
+            <div id="about-card-bio"><p><a href="mailto:joddiyzhang@gmail.com">joddiyzhang@gmail.com</a></p>
+</div>
+        
+        
+            <div id="about-card-job">
+                <i class="fa fa-briefcase"></i>
+                <br/>
+                <p>Data Engineer</p>
+
+            </div>
+        
+        
+            <div id="about-card-location">
+                <i class="fa fa-map-marker-alt"></i>
+                <br/>
+                Singapore
+            </div>
+        
+    </div>
+</div>
+
+        
+        
+<div id="cover" style="background-image:url('/assets/images/cover.jpg');"></div>
+        <!--SCRIPTS-->
+
+<script src="/assets/js/script-nepw8mgf4vymyzpmseeyse3uwwhc5nmbchi76kdesjlnnpygoxxx0gguzbet.min.js"></script>
+
+<!--SCRIPTS END-->
+
+
+    
+        
+<script src="/assets/js/gitalk.js"></script>
+
+        <script type="text/javascript">
+          (function() {
+            new Gitalk({
+              clientID: 'bee9685b2dc9739b6bd5',
+              clientSecret: 'a0c683f383a94fae6d021ab932f37f7e56899410',
+              repo: 'joddiy.github.io',
+              owner: 'joddiy',
+              admin: ['joddiy'],
+              id: '2017/01/11/PHP下的几种多进程模型/',
+              ...{"language":"en","perPage":10,"distractionFreeMode":false,"enableHotKey":true,"pagerDirection":"first"}
+            }).render('gitalk')
+          })()
+        </script>
+    
+
+
+
+
+    </body>
+</html>

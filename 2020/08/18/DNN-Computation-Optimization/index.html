@@ -6,7 +6,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="generator" content="Jz Blog">
-    <title>关于代码重构的研究 - Jz Blog</title>
+    <title>DNN Inference Accelerator - Jz Blog</title>
     <meta name="author" content="Joddiy Zhang">
     
     
@@ -17,20 +17,29 @@
             <link rel="alternate" type="application/atom+xml" title="RSS" href="/atom.xml">
         
     
-    <script type="application/ld+json">{"@context":"http://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"Joddiy Zhang","sameAs":["https://github.com/joddiy","https://www.linkedin.com/profile/"],"image":"14108933.jpeg"},"articleBody":"前言公司在年后要举办一次“代码质量月”的活动，由我负责第三部分即结合实例方面的讲解，实例内容主要来自于 ETL 开发中的几次重构，以及我应该会抽时间研究和学习一下《改善既有代码的设计》这本书，所有的进度和内容都会记录在这份文档里。\n提纲;\n\n灵活使用设计模式 讲解一些常用设计模式的使用场景及前后效果对比\n科学使用存储软件 主要讲解 PHP 如何配合数据库（考虑加上 Redis ）优化查询、变更、删除方面的内容\n实际项目中的一些最佳实践 这部分考虑先看完《改善既有代码的设计》这本书，然后再次重构 ETL 后进行总结\n\n读书笔记何谓重构\n重构，使用一系列手法，在不改变软件可观察行为的前提下，调整其结构。这点可能跟我要讲的内容有冲突\n开发和重构是两部分工作，开发时只增加新功能确保通过测试通过，重构时只修改程序结构使通过相同测试。\n\n为何重构\n改进软件设计\n更容易理解\n查找 Bug\n提高速度，良好的设计是快速开发的根本\n\n何时重构\n添加功能时\n修补错误时\n复审代码时 欠缺之处\n\n糟糕的程序\n难以阅读\n逻辑重复\n添加新行为会影响已有代码\n带有复杂条件逻辑的程序\n\n重构的难题\n数据库\n程序与数据库结构耦合\n数据库结构变更导致迁移数据\n\n\n接口\n接口重命名，同时维护两个接口，使旧接口调用新接口，对旧接口 Deprecation\n\n\n\n参考资料\nDesignPatternsPHP \nRefactoring Patterns \nRefactoring Good Practices\nTop 15+ Best Practices for Writing Super Readable Code\n\n","dateCreated":"2017-01-09T16:10:51+08:00","dateModified":"2020-05-11T15:09:10+08:00","datePublished":"2017-01-09T16:10:51+08:00","description":"Study notes for code reconstruction","headline":"关于代码重构的研究","image":["https://pbs.twimg.com/profile_images/706844277058351105/yGghsaRi_400x400.jpg","https://blog.parasoft.com/hubfs/update-legacy-code.png"],"mainEntityOfPage":{"@type":"WebPage","@id":"https://joddiy.github.io/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"},"publisher":{"@type":"Organization","name":"Joddiy Zhang","sameAs":["https://github.com/joddiy","https://www.linkedin.com/profile/"],"image":"14108933.jpeg","logo":{"@type":"ImageObject","url":"14108933.jpeg"}},"url":"https://joddiy.github.io/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/","keywords":"研究向, 设计风格","thumbnailUrl":"https://pbs.twimg.com/profile_images/706844277058351105/yGghsaRi_400x400.jpg"}</script>
-    <meta name="description" content="Study notes for code reconstruction">
+    <script type="application/ld+json">{"@context":"http://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"Joddiy Zhang","sameAs":["https://github.com/joddiy","https://www.linkedin.com/profile/"],"image":"14108933.jpeg"},"articleBody":"A typical DNN Inference Accelerator stack\nTensorRT for CUDA and OpenVINO for CPU.\nNVIDIA TensorRT is an SDK for high-performance deep learning inference. It includes a deep learning inference optimizer and runtime that delivers low latency and high-throughput for deep learning inference applications.*(ONNX suporrted)\n\nThe build phase performs the following optimizations on the layer graph:\n\nElimination of layers whose outputs are not used\nElimination of operations which are equivalent to no-op\nThe fusion of convolution, bias and ReLU operations\nAggregation of operations with sufficiently similar parameters and the same source tensor (for example, the 1x1 convolutions in GoogleNet v5’s inception module)\n\n\nMerging of concatenation layers by directing layer outputs to the correct eventual destination.\nThe OpenVINO toolkit is a comprehensive toolkit for quickly developing applications and solutions that emulate human vision. Based on Convolutional Neural Networks (CNNs), the toolkit extends CV workloads across Intel® hardware, maximizing performance.\nSteps for Inference Accelerator\n\nOperator optimization: lossless optimize a sepcific operator by using expert-designed algorithms.\nGraph optimization: lossless optimize the grph by pruning, fusing or replacing the graph.\nModel compression: lossy optimization by using low precision storage. \nDeploy optimization: resource arrangement and schedule.\n\nSummaryAn ADMM Based Framework for AutoML Pipeline Configuration:(hyper-parameter tuning)\n\nautomatically configuring machine learning pipelines(functional modules: preprocessor, transformer, estimator).\nproposes some math notions to represent this problem(pipelines, hyper-parameters, and constraints).\ndecomposes the problem into sub-problems.\n\n\n\nBeyond Data and Model Parallelism for Deep Neural Networks(Graph optimization, Deploy optimization)\n\nproposes parallelism dimensions SOAP(Sample, Operation, Attribute, and Parameter dimensions), e.g, Data Parallelism is S, and Model Parallelism is O, P.\nsplits a node to Multi-GPUs by SOAP, each as a task, and data transfer is also a task.\nSOAP as a search space, uses MCMC to find efficient task placement.\nuses predicted node excution time as model total execution time.\n\n\n\nTASO: Optimizing Deep Learning Computation with Automatic Generation of Graph Substitutions(Graph optimization)\n\noptimizes the graph by using graph substitution.\nDFS algorithm generates all acyclic computation graphs as a substitution if its output is same.\nanalyzes the above graph substitution to get operator properties.\njoint optimization with data layout(data stores along which dimension) and graph transformation. TASO measures the execution time and estimates the performance of a graph.\n\n\n\nOpen problem\njointly optimize DNN computation at both graph-level and deploy-level(hyper-parameter tuning).\nAutoML Pipeline Configuration with Reinforcement Learning\n(uses the predicted node excution time to compute the model total execution time)\ncontribution 1: modules, continuous/integer hyper-parameters, constraints as Reinforcement Learning policy(refer the first paper).\ncontribution 2: joint optimization with graph-level and deploy-level(graph optimization on multi-GPUs associate with saveral configuration)(refer the second and third paper).\ncontribution 3: ?\nGraph Neural Networks，GNN ?\n\n\n\nDraft\nMotivition: accelerate automatically hyperparameter tuning\nMethodology: reinforcement learning\n\n\nMore papers\nDevice placement optimization with reinforcement learning.\nExploring hidden dimensions in parallelizing convolutional neural networks.\nOptimizing DNN Computation with Relaxed Graph Substitutions.\nLearning to Optimize Tensor Programs.\nZ3: An Efficient SMT Solver.\n\n","dateCreated":"2020-08-18T21:39:59+08:00","dateModified":"2020-08-19T11:10:25+08:00","datePublished":"2020-08-18T21:39:59+08:00","description":"Paper summary for DNN Inference Accelerator","headline":"DNN Inference Accelerator","image":["https://1.bp.blogspot.com/-cLxpo2BA8oI/XZMQrDSXefI/AAAAAAAAnhs/7FS6r94KFNQFzVt_8Ihx1iyTltt7if_xgCLcBGAsYHQ/s1600/TensorFlow%2B2.0%2BLogo.png","https://www.eetasia.com/wp-content/uploads/sites/2/images/c806bc6b-a80c-4ed7-808e-3cc362811e28.jpg"],"mainEntityOfPage":{"@type":"WebPage","@id":"https://joddiy.github.io/2020/08/18/DNN-Computation-Optimization/"},"publisher":{"@type":"Organization","name":"Joddiy Zhang","sameAs":["https://github.com/joddiy","https://www.linkedin.com/profile/"],"image":"14108933.jpeg","logo":{"@type":"ImageObject","url":"14108933.jpeg"}},"url":"https://joddiy.github.io/2020/08/18/DNN-Computation-Optimization/","keywords":"Tools, Deep Learning","thumbnailUrl":"https://1.bp.blogspot.com/-cLxpo2BA8oI/XZMQrDSXefI/AAAAAAAAnhs/7FS6r94KFNQFzVt_8Ihx1iyTltt7if_xgCLcBGAsYHQ/s1600/TensorFlow%2B2.0%2BLogo.png"}</script>
+    <meta name="description" content="Paper summary for DNN Inference Accelerator">
 <meta property="og:type" content="blog">
-<meta property="og:title" content="关于代码重构的研究">
-<meta property="og:url" content="https://joddiy.github.io/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/index.html">
+<meta property="og:title" content="DNN Inference Accelerator">
+<meta property="og:url" content="https://joddiy.github.io/2020/08/18/DNN-Computation-Optimization/index.html">
 <meta property="og:site_name" content="Jz Blog">
-<meta property="og:description" content="Study notes for code reconstruction">
+<meta property="og:description" content="Paper summary for DNN Inference Accelerator">
 <meta property="og:locale" content="en_US">
-<meta property="article:published_time" content="2017-01-09T08:10:51.000Z">
-<meta property="article:modified_time" content="2020-05-11T07:09:10.000Z">
+<meta property="og:image" content="https://joddiy.github.io/2020/08/18/DNN-Computation-Optimization/1.jpg">
+<meta property="og:image" content="https://joddiy.github.io/2020/08/18/DNN-Computation-Optimization/2.png">
+<meta property="og:image" content="https://joddiy.github.io/2020/08/18/DNN-Computation-Optimization/8.png">
+<meta property="og:image" content="https://joddiy.github.io/2020/08/18/DNN-Computation-Optimization/7.png">
+<meta property="og:image" content="https://joddiy.github.io/2020/08/18/DNN-Computation-Optimization/3.png">
+<meta property="og:image" content="https://joddiy.github.io/2020/08/18/DNN-Computation-Optimization/4.png">
+<meta property="og:image" content="https://joddiy.github.io/2020/08/18/DNN-Computation-Optimization/5.png">
+<meta property="og:image" content="https://joddiy.github.io/2020/08/18/DNN-Computation-Optimization/6.png">
+<meta property="article:published_time" content="2020-08-18T13:39:59.000Z">
+<meta property="article:modified_time" content="2020-08-19T03:10:25.000Z">
 <meta property="article:author" content="Joddiy Zhang">
-<meta property="article:tag" content="研究向">
-<meta property="article:tag" content="设计风格">
+<meta property="article:tag" content="Tools">
+<meta property="article:tag" content="Deep Learning">
 <meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://joddiy.github.io/2020/08/18/DNN-Computation-Optimization/1.jpg">
     
     
         
@@ -39,12 +48,12 @@
         <meta property="og:image" content="https://joddiy.github.io/assets/images/14108933.jpeg"/>
     
     
-        <meta property="og:image" content="https://pbs.twimg.com/profile_images/706844277058351105/yGghsaRi_400x400.jpg"/>
-        <meta class="swiftype" name="image" data-type="enum" content="https://pbs.twimg.com/profile_images/706844277058351105/yGghsaRi_400x400.jpg"/>
+        <meta property="og:image" content="https://1.bp.blogspot.com/-cLxpo2BA8oI/XZMQrDSXefI/AAAAAAAAnhs/7FS6r94KFNQFzVt_8Ihx1iyTltt7if_xgCLcBGAsYHQ/s1600/TensorFlow%2B2.0%2BLogo.png"/>
+        <meta class="swiftype" name="image" data-type="enum" content="https://1.bp.blogspot.com/-cLxpo2BA8oI/XZMQrDSXefI/AAAAAAAAnhs/7FS6r94KFNQFzVt_8Ihx1iyTltt7if_xgCLcBGAsYHQ/s1600/TensorFlow%2B2.0%2BLogo.png"/>
     
     
-        <meta property="og:image" content="https://blog.parasoft.com/hubfs/update-legacy-code.png"/>
-        <meta class="swiftype" name="image" data-type="enum" content="https://blog.parasoft.com/hubfs/update-legacy-code.png"/>
+        <meta property="og:image" content="https://www.eetasia.com/wp-content/uploads/sites/2/images/c806bc6b-a80c-4ed7-808e-3cc362811e28.jpg"/>
+        <meta class="swiftype" name="image" data-type="enum" content="https://www.eetasia.com/wp-content/uploads/sites/2/images/c806bc6b-a80c-4ed7-808e-3cc362811e28.jpg"/>
     
     
     <!--STYLES-->
@@ -285,26 +294,26 @@
         <div class="post-header-cover
                     text-center
                     post-header-cover--partial"
-             style="background-image:url('https://blog.parasoft.com/hubfs/update-legacy-code.png');"
+             style="background-image:url('https://www.eetasia.com/wp-content/uploads/sites/2/images/c806bc6b-a80c-4ed7-808e-3cc362811e28.jpg');"
              data-behavior="5">
             
                 <div class="post-header main-content-wrap text-center">
     
         <h1 class="post-title">
-            关于代码重构的研究
+            DNN Inference Accelerator
         </h1>
     
     
         <div class="post-meta">
-    <time datetime="2017-01-09T16:10:51+08:00">
+    <time datetime="2020-08-18T21:39:59+08:00">
 	
-		    Jan 09, 2017
+		    Aug 18, 2020
     	
     </time>
     
         <span>in </span>
         
-    <a class="category-link" href="/categories/Engineering/">Engineering</a>
+    <a class="category-link" href="/categories/Study-Notes/">Study Notes</a>
 
 
     
@@ -326,50 +335,75 @@
     
     <div class="post-content markdown">
         <div class="main-content-wrap">
-            <h2 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h2><p>公司在年后要举办一次“代码质量月”的活动，由我负责第三部分即结合实例方面的讲解，实例内容主要来自于 ETL 开发中的几次重构，以及我应该会抽时间研究和学习一下《改善既有代码的设计》这本书，所有的进度和内容都会记录在这份文档里。</p>
-<h2 id="提纲"><a href="#提纲" class="headerlink" title="提纲"></a>提纲</h2><p>;</p>
-<ol>
-<li>灵活使用设计模式<br> 讲解一些常用设计模式的使用场景及前后效果对比</li>
-<li>科学使用存储软件<br> 主要讲解 PHP 如何配合数据库（考虑加上 Redis ）优化查询、变更、删除方面的内容</li>
-<li>实际项目中的一些最佳实践<br> 这部分考虑先看完《改善既有代码的设计》这本书，然后再次重构 ETL 后进行总结</li>
-</ol>
-<h2 id="读书笔记"><a href="#读书笔记" class="headerlink" title="读书笔记"></a>读书笔记</h2><h4 id="何谓重构"><a href="#何谓重构" class="headerlink" title="何谓重构"></a>何谓重构</h4><ul>
-<li>重构，使用一系列手法，在不改变软件可观察行为的前提下，调整其结构。<em>这点可能跟我要讲的内容有冲突</em></li>
-<li>开发和重构是两部分工作，开发时只增加新功能确保通过测试通过，重构时只修改程序结构使通过相同测试。</li>
+            <h2 id="A-typical-DNN-Inference-Accelerator-stack"><a href="#A-typical-DNN-Inference-Accelerator-stack" class="headerlink" title="A typical DNN Inference Accelerator stack"></a>A typical DNN Inference Accelerator stack</h2><p><img src="1.jpg" alt="1"></p>
+<p>TensorRT for CUDA and OpenVINO for CPU.</p>
+<p>NVIDIA TensorRT is an SDK for high-performance deep learning inference. It includes a deep learning inference optimizer and runtime that delivers low latency and high-throughput for deep learning inference applications.<br>*(ONNX suporrted)</p>
+<blockquote>
+<p>The build phase performs the following optimizations on the layer graph:</p>
+<ul>
+<li>Elimination of layers whose outputs are not used</li>
+<li>Elimination of operations which are equivalent to no-op</li>
+<li>The fusion of convolution, bias and ReLU operations</li>
+<li>Aggregation of operations with sufficiently similar parameters and the same source tensor (for example, the 1x1 convolutions in GoogleNet v5’s inception module)</li>
 </ul>
-<h4 id="为何重构"><a href="#为何重构" class="headerlink" title="为何重构"></a>为何重构</h4><ul>
-<li>改进软件设计</li>
-<li>更容易理解</li>
-<li>查找 Bug</li>
-<li>提高速度，良好的设计是快速开发的根本</li>
+</blockquote>
+<p>Merging of concatenation layers by directing layer outputs to the correct eventual destination.</p>
+<p>The OpenVINO toolkit is a comprehensive toolkit for quickly developing applications and solutions that emulate human vision. Based on Convolutional Neural Networks (CNNs), the toolkit extends CV workloads across Intel® hardware, maximizing performance.</p>
+<h2 id="Steps-for-Inference-Accelerator"><a href="#Steps-for-Inference-Accelerator" class="headerlink" title="Steps for Inference Accelerator"></a>Steps for Inference Accelerator</h2><p><img src="2.png" alt="2"></p>
+<ul>
+<li>Operator optimization: lossless optimize a sepcific operator by using expert-designed algorithms.</li>
+<li>Graph optimization: lossless optimize the grph by pruning, fusing or replacing the graph.</li>
+<li>Model compression: lossy optimization by using low precision storage. </li>
+<li>Deploy optimization: resource arrangement and schedule.</li>
 </ul>
-<h4 id="何时重构"><a href="#何时重构" class="headerlink" title="何时重构"></a>何时重构</h4><ul>
-<li>添加功能时</li>
-<li>修补错误时</li>
-<li>复审代码时 <strong>欠缺之处</strong></li>
+<h2 id="Summary"><a href="#Summary" class="headerlink" title="Summary"></a>Summary</h2><p>An ADMM Based Framework for AutoML Pipeline Configuration:(hyper-parameter tuning)</p>
+<ul>
+<li>automatically configuring machine learning pipelines(functional modules: preprocessor, transformer, estimator).</li>
+<li>proposes some math notions to represent this problem(pipelines, hyper-parameters, and constraints).</li>
+<li>decomposes the problem into sub-problems.</li>
 </ul>
-<h4 id="糟糕的程序"><a href="#糟糕的程序" class="headerlink" title="糟糕的程序"></a>糟糕的程序</h4><ul>
-<li>难以阅读</li>
-<li>逻辑重复</li>
-<li>添加新行为会影响已有代码</li>
-<li>带有复杂条件逻辑的程序</li>
+<p><img src="8.png" alt="8"></p>
+<p><img src="7.png" alt="7"></p>
+<p>Beyond Data and Model Parallelism for Deep Neural Networks(Graph optimization, Deploy optimization)</p>
+<ul>
+<li>proposes parallelism dimensions SOAP(Sample, Operation, Attribute, and Parameter dimensions), e.g, Data Parallelism is S, and Model Parallelism is O, P.</li>
+<li>splits a node to Multi-GPUs by SOAP, each as a task, and data transfer is also a task.</li>
+<li>SOAP as a search space, uses MCMC to find efficient task placement.</li>
+<li>uses predicted node excution time as model total execution time.</li>
 </ul>
-<h4 id="重构的难题"><a href="#重构的难题" class="headerlink" title="重构的难题"></a>重构的难题</h4><ul>
-<li>数据库<ul>
-<li>程序与数据库结构耦合</li>
-<li>数据库结构变更导致迁移数据</li>
+<p><img src="3.png" alt="3"></p>
+<p><img src="4.png" alt="4"></p>
+<p>TASO: Optimizing Deep Learning Computation with Automatic Generation of Graph Substitutions(Graph optimization)</p>
+<ul>
+<li>optimizes the graph by using graph substitution.</li>
+<li>DFS algorithm generates all acyclic computation graphs as a substitution if its output is same.</li>
+<li>analyzes the above graph substitution to get operator properties.</li>
+<li>joint optimization with data layout(data stores along which dimension) and graph transformation. TASO measures the execution time and estimates the performance of a graph.</li>
+</ul>
+<p><img src="5.png" alt="5"></p>
+<p><img src="6.png" alt="6"></p>
+<h2 id="Open-problem"><a href="#Open-problem" class="headerlink" title="Open problem"></a>Open problem</h2><ul>
+<li>jointly optimize DNN computation at both graph-level and deploy-level(hyper-parameter tuning).<ul>
+<li>AutoML Pipeline Configuration with Reinforcement Learning</li>
+<li>(uses the predicted node excution time to compute the model total execution time)</li>
+<li>contribution 1: modules, continuous/integer hyper-parameters, constraints as Reinforcement Learning policy(refer the first paper).</li>
+<li>contribution 2: joint optimization with graph-level and deploy-level(graph optimization on multi-GPUs associate with saveral configuration)(refer the second and third paper).</li>
+<li>contribution 3: ?</li>
+<li>Graph Neural Networks，GNN ?</li>
 </ul>
 </li>
-<li>接口<ul>
-<li>接口重命名，同时维护两个接口，使旧接口调用新接口，对旧接口 Deprecation</li>
 </ul>
-</li>
+<h2 id="Draft"><a href="#Draft" class="headerlink" title="Draft"></a>Draft</h2><ul>
+<li>Motivition: accelerate automatically hyperparameter tuning</li>
+<li>Methodology: reinforcement learning</li>
+<li></li>
 </ul>
-<h2 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h2><ul>
-<li><a href="https://github.com/domnikl/DesignPatternsPHP" target="_blank" rel="noopener">DesignPatternsPHP</a> </li>
-<li><a href="https://dzone.com/refcardz/refactoring-patterns" target="_blank" rel="noopener">Refactoring Patterns</a> </li>
-<li><a href="https://blog.inf.ed.ac.uk/sapm/2014/03/14/refactoring-good-practices/" target="_blank" rel="noopener">Refactoring Good Practices</a></li>
-<li><a href="https://code.tutsplus.com/tutorials/top-15-best-practices-for-writing-super-readable-code--net-8118" target="_blank" rel="noopener">Top 15+ Best Practices for Writing Super Readable Code</a></li>
+<h2 id="More-papers"><a href="#More-papers" class="headerlink" title="More papers"></a>More papers</h2><ul>
+<li>Device placement optimization with reinforcement learning.</li>
+<li>Exploring hidden dimensions in parallelizing convolutional neural networks.</li>
+<li>Optimizing DNN Computation with Relaxed Graph Substitutions.</li>
+<li>Learning to Optimize Tensor Programs.</li>
+<li>Z3: An Efficient SMT Solver.</li>
 </ul>
 
             
@@ -382,7 +416,7 @@
             <div class="post-footer-tags">
                 <span class="text-color-light text-small">TAGGED IN</span><br/>
                 
-    <a class="tag tag--primary tag--small t-link" href="/tags/%E7%A0%94%E7%A9%B6%E5%90%91/" rel="tag">研究向</a> <a class="tag tag--primary tag--small t-link" href="/tags/%E8%AE%BE%E8%AE%A1%E9%A3%8E%E6%A0%BC/" rel="tag">设计风格</a>
+    <a class="tag tag--primary tag--small t-link" href="/tags/Deep-Learning/" rel="tag">Deep Learning</a> <a class="tag tag--primary tag--small t-link" href="/tags/Tools/" rel="tag">Tools</a>
 
             </div>
         
@@ -392,14 +426,11 @@
         <ul class="post-actions post-action-nav">
             <li class="post-action">
                 
-                    
-                <a
-                    class="post-action-btn btn btn--default tooltip--top"
-                    href="/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E4%B8%80%E7%A7%8D%E5%A4%9A%E8%AE%A1%E5%88%92%E4%BB%BB%E5%8A%A1%E5%AE%88%E6%8A%A4%E6%A8%A1%E5%9E%8B/"
-                    data-tooltip="PHP下的一种多计划任务守护模型"
-                    aria-label="PREVIOUS: PHP下的一种多计划任务守护模型"
-                >
-                    
+                    <a
+                        class="post-action-btn btn btn--disabled"
+                        aria-hidden="true"
+                    >
+                        
                         <i class="fa fa-angle-left" aria-hidden="true"></i>
                         <span class="hide-xs hide-sm text-small icon-ml">PREVIOUS</span>
                     </a>
@@ -409,9 +440,9 @@
                     
                 <a
                     class="post-action-btn btn btn--default tooltip--top"
-                    href="/2017/01/04/PHP-%E8%AE%BE%E8%AE%A1%E6%A8%A1%E5%BC%8F-%E8%A7%82%E5%AF%9F%E8%80%85%E6%A8%A1%E5%BC%8F/"
-                    data-tooltip="PHP-设计模式-观察者模式"
-                    aria-label="NEXT: PHP-设计模式-观察者模式"
+                    href="/2020/07/10/linux-script/"
+                    data-tooltip="linux-script"
+                    aria-label="NEXT: linux-script"
                 >
                     
                         <span class="hide-xs hide-sm text-small icon-mr">NEXT</span>
@@ -436,7 +467,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.github.io/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"
+                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.github.io/2020/08/18/DNN-Computation-Optimization/"
                     title="Share on Facebook"
                     aria-label="Share on Facebook"
                 >
@@ -449,7 +480,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://twitter.com/intent/tweet?text=https://joddiy.github.io/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"
+                    target="new" href="https://twitter.com/intent/tweet?text=https://joddiy.github.io/2020/08/18/DNN-Computation-Optimization/"
                     title="Share on Twitter"
                     aria-label="Share on Twitter"
                 >
@@ -462,7 +493,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://plus.google.com/share?url=https://joddiy.github.io/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"
+                    target="new" href="https://plus.google.com/share?url=https://joddiy.github.io/2020/08/18/DNN-Computation-Optimization/"
                     title="Share on Google+"
                     aria-label="Share on Google+"
                 >
@@ -475,7 +506,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://www.linkedin.com/shareArticle?mini=true&amp;url=https://joddiy.github.io/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"
+                    target="new" href="https://www.linkedin.com/shareArticle?mini=true&amp;url=https://joddiy.github.io/2020/08/18/DNN-Computation-Optimization/"
                     title="global.share_on_linkedin"
                     aria-label="global.share_on_linkedin"
                 >
@@ -488,7 +519,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="http://service.weibo.com/share/share.php?&amp;title=https://joddiy.github.io/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"
+                    target="new" href="http://service.weibo.com/share/share.php?&amp;title=https://joddiy.github.io/2020/08/18/DNN-Computation-Optimization/"
                     title="Share on Weibo"
                     aria-label="Share on Weibo"
                 >
@@ -546,14 +577,11 @@
         <ul class="post-actions post-action-nav">
             <li class="post-action">
                 
-                    
-                <a
-                    class="post-action-btn btn btn--default tooltip--top"
-                    href="/2017/01/11/PHP%E4%B8%8B%E7%9A%84%E4%B8%80%E7%A7%8D%E5%A4%9A%E8%AE%A1%E5%88%92%E4%BB%BB%E5%8A%A1%E5%AE%88%E6%8A%A4%E6%A8%A1%E5%9E%8B/"
-                    data-tooltip="PHP下的一种多计划任务守护模型"
-                    aria-label="PREVIOUS: PHP下的一种多计划任务守护模型"
-                >
-                    
+                    <a
+                        class="post-action-btn btn btn--disabled"
+                        aria-hidden="true"
+                    >
+                        
                         <i class="fa fa-angle-left" aria-hidden="true"></i>
                         <span class="hide-xs hide-sm text-small icon-ml">PREVIOUS</span>
                     </a>
@@ -563,9 +591,9 @@
                     
                 <a
                     class="post-action-btn btn btn--default tooltip--top"
-                    href="/2017/01/04/PHP-%E8%AE%BE%E8%AE%A1%E6%A8%A1%E5%BC%8F-%E8%A7%82%E5%AF%9F%E8%80%85%E6%A8%A1%E5%BC%8F/"
-                    data-tooltip="PHP-设计模式-观察者模式"
-                    aria-label="NEXT: PHP-设计模式-观察者模式"
+                    href="/2020/07/10/linux-script/"
+                    data-tooltip="linux-script"
+                    aria-label="NEXT: linux-script"
                 >
                     
                         <span class="hide-xs hide-sm text-small icon-mr">NEXT</span>
@@ -590,7 +618,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.github.io/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"
+                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.github.io/2020/08/18/DNN-Computation-Optimization/"
                     title="Share on Facebook"
                     aria-label="Share on Facebook"
                 >
@@ -603,7 +631,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://twitter.com/intent/tweet?text=https://joddiy.github.io/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"
+                    target="new" href="https://twitter.com/intent/tweet?text=https://joddiy.github.io/2020/08/18/DNN-Computation-Optimization/"
                     title="Share on Twitter"
                     aria-label="Share on Twitter"
                 >
@@ -616,7 +644,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://plus.google.com/share?url=https://joddiy.github.io/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"
+                    target="new" href="https://plus.google.com/share?url=https://joddiy.github.io/2020/08/18/DNN-Computation-Optimization/"
                     title="Share on Google+"
                     aria-label="Share on Google+"
                 >
@@ -629,7 +657,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://www.linkedin.com/shareArticle?mini=true&amp;url=https://joddiy.github.io/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"
+                    target="new" href="https://www.linkedin.com/shareArticle?mini=true&amp;url=https://joddiy.github.io/2020/08/18/DNN-Computation-Optimization/"
                     title="global.share_on_linkedin"
                     aria-label="global.share_on_linkedin"
                 >
@@ -642,7 +670,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="http://service.weibo.com/share/share.php?&amp;title=https://joddiy.github.io/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"
+                    target="new" href="http://service.weibo.com/share/share.php?&amp;title=https://joddiy.github.io/2020/08/18/DNN-Computation-Optimization/"
                     title="Share on Weibo"
                     aria-label="Share on Weibo"
                 >
@@ -686,7 +714,7 @@
                     <a
                         class="share-option-btn"
                         target="new"
-                        href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.github.io/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"
+                        href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.github.io/2020/08/18/DNN-Computation-Optimization/"
                         aria-label="Share on Facebook"
                     >
                         <i class="fab fa-facebook" aria-hidden="true"></i><span>Share on Facebook</span>
@@ -699,7 +727,7 @@
                     <a
                         class="share-option-btn"
                         target="new"
-                        href="https://twitter.com/intent/tweet?text=https://joddiy.github.io/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"
+                        href="https://twitter.com/intent/tweet?text=https://joddiy.github.io/2020/08/18/DNN-Computation-Optimization/"
                         aria-label="Share on Twitter"
                     >
                         <i class="fab fa-twitter" aria-hidden="true"></i><span>Share on Twitter</span>
@@ -712,7 +740,7 @@
                     <a
                         class="share-option-btn"
                         target="new"
-                        href="https://plus.google.com/share?url=https://joddiy.github.io/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"
+                        href="https://plus.google.com/share?url=https://joddiy.github.io/2020/08/18/DNN-Computation-Optimization/"
                         aria-label="Share on Google+"
                     >
                         <i class="fab fa-google-plus" aria-hidden="true"></i><span>Share on Google+</span>
@@ -725,7 +753,7 @@
                     <a
                         class="share-option-btn"
                         target="new"
-                        href="https://www.linkedin.com/shareArticle?mini=true&amp;url=https://joddiy.github.io/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"
+                        href="https://www.linkedin.com/shareArticle?mini=true&amp;url=https://joddiy.github.io/2020/08/18/DNN-Computation-Optimization/"
                         aria-label="global.share_on_linkedin"
                     >
                         <i class="fab fa-linkedin" aria-hidden="true"></i><span>global.share_on_linkedin</span>
@@ -738,7 +766,7 @@
                     <a
                         class="share-option-btn"
                         target="new"
-                        href="http://service.weibo.com/share/share.php?&amp;title=https://joddiy.github.io/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"
+                        href="http://service.weibo.com/share/share.php?&amp;title=https://joddiy.github.io/2020/08/18/DNN-Computation-Optimization/"
                         aria-label="Share on Weibo"
                     >
                         <i class="fab fa-weibo" aria-hidden="true"></i><span>Share on Weibo</span>
@@ -811,7 +839,7 @@
               repo: 'joddiy.github.io',
               owner: 'joddiy',
               admin: ['joddiy'],
-              id: '2017/01/09/关于代码重构的研究/',
+              id: '2020/08/18/DNN-Computation-Optimization/',
               ...{"language":"en","perPage":10,"distractionFreeMode":false,"enableHotKey":true,"pagerDirection":"first"}
             }).render('gitalk')
           })()

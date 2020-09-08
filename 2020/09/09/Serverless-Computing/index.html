@@ -1,0 +1,913 @@
+
+<!DOCTYPE html>
+<html lang="en">
+    
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="generator" content="Jz Blog">
+    <title>Serverless Computing - Jz Blog</title>
+    <meta name="author" content="Joddiy Zhang">
+    
+    
+        <link rel="icon" href="https://joddiy.github.io/assets/images/favicon.ico">
+    
+    
+        
+            <link rel="alternate" type="application/atom+xml" title="RSS" href="/atom.xml">
+        
+    
+    <script type="application/ld+json">{"@context":"http://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"Joddiy Zhang","sameAs":["https://github.com/joddiy","https://www.linkedin.com/profile/"],"image":"14108933.jpeg"},"articleBody":"Serverless Computing: One Step Forward, Two Steps BackA FaaS offering by itself is of little value, since each function execution is isolated and ephemeral. Building applications on FaaS requires data management in both persistent and temporary storage.\nAs a result, cloud providers are quick to emphasize that serverless is not only FaaS. It is FaaS supported by a “standard library”: the various multitenanted, autoscaling services provided by the vendor.\n\n\nThree Design PatternsEmbarrassingly parallel functions\n\nIn some applications, each function invocation is an independent task and never needs to communicate with other functions.\n\nOrchestration functions\n\nA second class of use cases leverages serverless functions simply to orchestrate calls to proprietary autoscaling services, such as large-scale analytics.\n\nFunction Composition\n\nThe third category consists of collections of functions that are composed to build applications and thus need to pass along outputs and inputs.\n\nServerless Is Too LessServerless computing today is at best a simple and powerful way to run embarrassingly parallel computations or harness proprietary services.\nThe limitations in today’s FaaS offerings:\n(1). Limited Lifetimes\nAfter 15 minutes, function invocations are shut down by the Lambda infrastructure. \nThere is no way to ensure that subsequent invocations are run on the same VM. Hence functions must be written assuming that state will not be recoverable across invocations.\n(2). I/O Bottlenecks\nRecent studies show that a single Lambda function can achieve on average 538Mbps network bandwidth.\nWorse, AWS appears to attempt to pack Lambda functions from the same user together on a single VM, so the limited bandwidth is shared by multiple functions.\n(3). Communication Through Slow Storage\nTwo Lambda functions can only communicate through an autoscaling intermediary service.\nHence maintaining state across client calls requires writing the state out to slow storage, and reading it back on every subsequent call.\nA number of corollaries follow directly.\nFaaS is a Data-Shipping Architecture\n\nFaaS routinely “ships data to code” rather than “shipping code to data.”\n\nFaaS Stymies Distributed Computing\n\nTwo functions can work together serverlessly only by passing data through slow and expensive storage.\n\nCase Studies: Model Training(1). Lambda:\nEach Lambda is allocated the maximum lifetime (15 min) and 640MB RAM and runs as many training iterations as possible.\nEach iteration in Lambda took 3.08 seconds: 2.49 to fetch a 100MB batch from S3 and 0.59 seconds to run the AdamOptimizer.\nWe trained the model over 10 full passes of the training data, which translates to 31 sequential lambda executions, each of which runs for 15 minutes, or 465 minutes total latency. This costs $0.29.\n(2). Tensorflow\nFor comparison, we trained the same model on an m4.large EC2 instance, which has 8GB of RAM and 2vCPUs. In this setting, each iteration is significantly faster (0.14 seconds): 0.04 seconds to fetch data from an EBS volume and 0.1 seconds to run the optimizer.\nThe same training process takes about 1300 seconds (just under 22 minutes), which translates to a cost of $0.04.\nLambda’s limited resources and data-shipping architecture mean that running this algorithm on Lambda is 21× slower and 7.3× more expensive than running on EC2.\nCase Studies: Prediction ServingIn practice, prediction serving relies on access to specialized hardware like GPUs, which are not available through AWS Lambda.\nTo that end, we exercised Lambda’s favored service for batching inputs: AWS Simple Queueing Service (SQS). Our model in this experiment is a simple blacklist of dirty words. SQS only allows batches of 10 messages at a time, so we limited all experiments here to 10-message batches.\nThe average latency over 1,000 batch invocations for the Lambda application was 559ms per batch if the model was retrieved on every invocation and results written back to S3 and was 447ms when results were placed back into an SQS queue.\nThe first replaced Lambda’s role in the application with an EC2 machine to receive SQS message batches—this showed a latency of 13ms per batch averaged over 1,000 batches—27× faster than our “optimized” Lambda implementation. \nThe second experiment used ZeroMQ to replace SQS’s role in the application, and receive messages directly on the EC2 machine. This “serverful” version had a per batch latency of 2.8ms—127× faster than the optimized Lambda implementation.\nSQS request rate alone would cost $1,584 per hour. \nCase Studies: Distributed Computingtry alternative solutions to achieve distributed computation.\n\n\nFirst we measure the pure functional, event-driven programming cost of a 1KB object being handled by a Lambda function invocation—this incurs both I/O and function overheads and is exorbitantly expensive5. Next we measure the cost of explicit I/O from Lambda, namely an average write+read from a long-running function—this is still over an order of magnitude slower than one would like.\nWe see that latencies from EC2 are almost identical, so the overhead is in the storage service costs, not in Lambda.\nFinally we show the latency of (acked) messaging using Python functions directly addressing each other via ZeroMQ. This last cost is close to typical intra-rack datacenter network measurements; studies from even a few years ago report average inter-rack measurements around 1.26ms\nIn sum, communicating via cloud storage is not a reasonable replacement for directly-addressed networking, even with direct I/O.\nDynamoDB as a fine-grained communication medium is incredibly expensive: Supporting a cluster of 1,000 nodes costs at minimum $450 per hour.\nCirrus: a Serverless Framework for End-to-end MLWorkflowsThis work proposes Cirrus, a distributed ML training framework that addresses these challenges by leveraging serverless computing.\nEnd-to-end MLWorkflow ChallengesOver-provisioning\n\nThe heterogeneity of the different tasks in an MLworkflowleads to a significant resource imbalance during the execution of a training workflow.\n\nExplicit resource management\n\nThe established approach of exposing low-level VM resources, such as storage and CPUs, puts a significant burden on ML developers who are faced with the challenge of provisioning, configuring, and managing these resources for each of their ML workloads.\n\nServerless Computingmajor limitations of existing serverless environments:\nSmall local memory and storage\n\nAWS lambdas can only access at most 3GB of local RAM and 512MB of local disk\n\nLowbandwidth and lack of P2P communication\n\nWe find that the largest AWS Lambda can only sustain 60MB/s of bandwidth. AWS Lambdas do not allow peer-to-peer communication. Thus, common communication strategies used for datacenter ML, such as tree-structured or ring-structured AllReduce communication [43], become impossible to implement efficiently in such environments.\n\nShort-lived and unpredictable launch times\n\nAWS lambdas can take up to several minutes to start after being launched. This means that during training, lambdas start at unpredictable times and can finish in the middle of training. This requires ML runtimes for lambdas to tolerate the frequent departure and arrival of workers.\n\nLack of fast shared storage\n\nshared storage needs to be low-latency, high-throughput, and optimized for the type of communications in ML workloads.\n\nCIRRUS DESIGN\n\nDesign Principles:\n\nAdaptive, fine-grained resource allocation.\nStateless server-side backend.\nEnd-to-end serverless API.\nHigh scalability.\n\n(1) Worker runtime\nThe system runtime meets two goals: 1) lightweight, and 2) high-performance.\nThe worker runtime provides two interfaces. \nFirst, it provides a smart iterator for training datasets stored in S3. This iterator prefetches and buffers minibatches in the lambda’s local memory in parallel with the worker’s computations to mitigate the high latency (&gt;10ms) of accessing S3.\nSecond, it provides an API for the distributed data store. This API implements: data compression, sparse transfers of data, asynchronous communication and sharding across multiple nodes.\n(2) Distributed data store\nCirrus’s data store serves the purpose of storing intermediate data to be shared by all workers.\nTo achieve low-latency, we deploy our data store in cloud VMs. It achieves latencies as low as 300μs versus ≈ 10ms for AWS S3.\nAPI Example\n\nThe first step in the workflow with Cirrus is to load the dataset and upload it to S3. \nCirrus parses the data, automatically creates partitions for it and then uploads it to S3. The front-end partitions datasets in blocks of roughly 10MB. \nWe chose this size because data partitions in Cirrus are the granularity of data workers transfer from S3. We have found this size allows lambda workers to achieve good network transfer bandwidth. In addition, this keeps the size of each worker’s minibatch cache small.\nCirrus Implementation(1) Client backend\nLambdas that are launched during training are relaunched automatically when their lifetime terminates (every 15 minutes).\nThe backend keeps a pool of threads that can be used for responding to requests for new lambda tasks.\n(2) Distributed data store\nCirrus’s distributed data store provides an interface supporting a key-value store interface (set/get) and a parameter-server interface (send gradient / get model).\nseveral optimizations:\n\nmultithreaded server that distributes work across many cores\ndata compression for the gradientand models\nsparse gradient and model data structures\n\n(3) Worker runtime\n\n\nFor data access, the runtime provides a minibatch-based iterator backed by a local memory ring-buffer that allows workers to access training minibatches with low latency. \nIn addition, it provides an efficient API to communicate with the distributed data store.\nEVALUATION\n\n\n","dateCreated":"2020-09-09T04:13:11+08:00","dateModified":"2020-09-09T06:54:18+08:00","datePublished":"2020-09-09T04:13:11+08:00","description":"Paper summary for Serverless Computing","headline":"Serverless Computing","image":["https://1.bp.blogspot.com/-cLxpo2BA8oI/XZMQrDSXefI/AAAAAAAAnhs/7FS6r94KFNQFzVt_8Ihx1iyTltt7if_xgCLcBGAsYHQ/s1600/TensorFlow%2B2.0%2BLogo.png","https://www.eetasia.com/wp-content/uploads/sites/2/images/c806bc6b-a80c-4ed7-808e-3cc362811e28.jpg"],"mainEntityOfPage":{"@type":"WebPage","@id":"https://joddiy.github.io/2020/09/09/Serverless-Computing/"},"publisher":{"@type":"Organization","name":"Joddiy Zhang","sameAs":["https://github.com/joddiy","https://www.linkedin.com/profile/"],"image":"14108933.jpeg","logo":{"@type":"ImageObject","url":"14108933.jpeg"}},"url":"https://joddiy.github.io/2020/09/09/Serverless-Computing/","keywords":"Tools, Deep Learning","thumbnailUrl":"https://1.bp.blogspot.com/-cLxpo2BA8oI/XZMQrDSXefI/AAAAAAAAnhs/7FS6r94KFNQFzVt_8Ihx1iyTltt7if_xgCLcBGAsYHQ/s1600/TensorFlow%2B2.0%2BLogo.png"}</script>
+    <meta name="description" content="Paper summary for Serverless Computing">
+<meta property="og:type" content="blog">
+<meta property="og:title" content="Serverless Computing">
+<meta property="og:url" content="https://joddiy.github.io/2020/09/09/Serverless-Computing/index.html">
+<meta property="og:site_name" content="Jz Blog">
+<meta property="og:description" content="Paper summary for Serverless Computing">
+<meta property="og:locale" content="en_US">
+<meta property="og:image" content="https://joddiy.github.io/2020/09/09/Serverless-Computing/1.png">
+<meta property="og:image" content="https://joddiy.github.io/2020/09/09/Serverless-Computing/2.png">
+<meta property="og:image" content="https://joddiy.github.io/2020/09/09/Serverless-Computing/3.png">
+<meta property="og:image" content="https://joddiy.github.io/2020/09/09/Serverless-Computing/4.png">
+<meta property="og:image" content="https://joddiy.github.io/2020/09/09/Serverless-Computing/5.png">
+<meta property="article:published_time" content="2020-09-08T20:13:11.000Z">
+<meta property="article:modified_time" content="2020-09-08T22:54:18.138Z">
+<meta property="article:author" content="Joddiy Zhang">
+<meta property="article:tag" content="Tools">
+<meta property="article:tag" content="Deep Learning">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://joddiy.github.io/2020/09/09/Serverless-Computing/1.png">
+    
+    
+        
+    
+    
+        <meta property="og:image" content="https://joddiy.github.io/assets/images/14108933.jpeg"/>
+    
+    
+        <meta property="og:image" content="https://1.bp.blogspot.com/-cLxpo2BA8oI/XZMQrDSXefI/AAAAAAAAnhs/7FS6r94KFNQFzVt_8Ihx1iyTltt7if_xgCLcBGAsYHQ/s1600/TensorFlow%2B2.0%2BLogo.png"/>
+        <meta class="swiftype" name="image" data-type="enum" content="https://1.bp.blogspot.com/-cLxpo2BA8oI/XZMQrDSXefI/AAAAAAAAnhs/7FS6r94KFNQFzVt_8Ihx1iyTltt7if_xgCLcBGAsYHQ/s1600/TensorFlow%2B2.0%2BLogo.png"/>
+    
+    
+        <meta property="og:image" content="https://www.eetasia.com/wp-content/uploads/sites/2/images/c806bc6b-a80c-4ed7-808e-3cc362811e28.jpg"/>
+        <meta class="swiftype" name="image" data-type="enum" content="https://www.eetasia.com/wp-content/uploads/sites/2/images/c806bc6b-a80c-4ed7-808e-3cc362811e28.jpg"/>
+    
+    
+    <!--STYLES-->
+    
+<link rel="stylesheet" href="/assets/css/style-k2ygfmkptjuemotlwbkrcqm19wuozptgnhknynmmndcykyqouv6n8vvzzybd.min.css">
+
+    <!--STYLES END-->
+    
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-109736487-1"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+
+        gtag('config', 'UA-109736487-1');
+    </script>
+
+
+    
+
+    
+        
+            
+<link rel="stylesheet" href="/assets/css/gitalk.css">
+
+        
+    
+</head>
+
+    <body>
+        <div id="blog">
+            <!-- Define author's picture -->
+
+
+    
+        
+            
+        
+    
+
+<header id="header" data-behavior="5">
+    <i id="btn-open-sidebar" class="fa fa-lg fa-bars"></i>
+    <div class="header-title">
+        <a
+            class="header-title-link"
+            href="/%20"
+            aria-label=""
+        >
+            Jz Blog
+        </a>
+    </div>
+    
+        
+            <a
+                class="header-right-picture "
+                href="#about"
+                aria-label="Open the link: /#about"
+            >
+        
+        
+            <img class="header-picture" src="/assets/images/14108933.jpeg" alt="Author&#39;s picture"/>
+        
+        </a>
+    
+</header>
+
+            <!-- Define author's picture -->
+
+
+
+        
+    
+
+<nav id="sidebar" data-behavior="5">
+    <div class="sidebar-container">
+        
+            <div class="sidebar-profile">
+                <a
+                    href="/#about"
+                    aria-label="Read more about the author"
+                >
+                    <img class="sidebar-profile-picture" src="/assets/images/14108933.jpeg" alt="Author&#39;s picture"/>
+                </a>
+                <h4 class="sidebar-profile-name">Joddiy Zhang</h4>
+                
+                    <h5 class="sidebar-profile-bio"><p><a href="mailto:joddiyzhang@gmail.com">joddiyzhang@gmail.com</a></p>
+</h5>
+                
+            </div>
+        
+        
+            <ul class="sidebar-buttons">
+            
+                <li class="sidebar-button">
+                    
+                        <a
+                            class="sidebar-button-link "
+                            href="/"
+                            
+                            rel="noopener"
+                            title="Home"
+                        >
+                        <i class="sidebar-button-icon fa fa-home" aria-hidden="true"></i>
+                        <span class="sidebar-button-desc">Home</span>
+                    </a>
+            </li>
+            
+                <li class="sidebar-button">
+                    
+                        <a
+                            class="sidebar-button-link "
+                            href="/all-categories"
+                            
+                            rel="noopener"
+                            title="Categories"
+                        >
+                        <i class="sidebar-button-icon fa fa-bookmark" aria-hidden="true"></i>
+                        <span class="sidebar-button-desc">Categories</span>
+                    </a>
+            </li>
+            
+                <li class="sidebar-button">
+                    
+                        <a
+                            class="sidebar-button-link "
+                            href="/all-tags"
+                            
+                            rel="noopener"
+                            title="Tags"
+                        >
+                        <i class="sidebar-button-icon fa fa-tags" aria-hidden="true"></i>
+                        <span class="sidebar-button-desc">Tags</span>
+                    </a>
+            </li>
+            
+                <li class="sidebar-button">
+                    
+                        <a
+                            class="sidebar-button-link "
+                            href="/all-archives"
+                            
+                            rel="noopener"
+                            title="Archives"
+                        >
+                        <i class="sidebar-button-icon fa fa-archive" aria-hidden="true"></i>
+                        <span class="sidebar-button-desc">Archives</span>
+                    </a>
+            </li>
+            
+                <li class="sidebar-button">
+                    
+                        <a
+                            class="sidebar-button-link open-algolia-search"
+                            href="#search"
+                            
+                            rel="noopener"
+                            title="Search"
+                        >
+                        <i class="sidebar-button-icon fa fa-search" aria-hidden="true"></i>
+                        <span class="sidebar-button-desc">Search</span>
+                    </a>
+            </li>
+            
+                <li class="sidebar-button">
+                    
+                        <a
+                            class="sidebar-button-link "
+                            href="#about"
+                            
+                            rel="noopener"
+                            title="About"
+                        >
+                        <i class="sidebar-button-icon fa fa-question" aria-hidden="true"></i>
+                        <span class="sidebar-button-desc">About</span>
+                    </a>
+            </li>
+            
+        </ul>
+        
+            <ul class="sidebar-buttons">
+            
+                <li class="sidebar-button">
+                    
+                        <a
+                            class="sidebar-button-link "
+                            href="https://github.com/joddiy"
+                            
+                                target="_blank"
+                            
+                            rel="noopener"
+                            title="GitHub"
+                        >
+                        <i class="sidebar-button-icon fab fa-github" aria-hidden="true"></i>
+                        <span class="sidebar-button-desc">GitHub</span>
+                    </a>
+            </li>
+            
+                <li class="sidebar-button">
+                    
+                        <a
+                            class="sidebar-button-link "
+                            href="https://www.linkedin.com/profile/"
+                            
+                                target="_blank"
+                            
+                            rel="noopener"
+                            title="LinkedIn"
+                        >
+                        <i class="sidebar-button-icon fab fa-linkedin" aria-hidden="true"></i>
+                        <span class="sidebar-button-desc">LinkedIn</span>
+                    </a>
+            </li>
+            
+        </ul>
+        
+            <ul class="sidebar-buttons">
+            
+                <li class="sidebar-button">
+                    
+                        <a
+                            class="sidebar-button-link "
+                            href="/atom.xml"
+                            
+                            rel="noopener"
+                            title="RSS"
+                        >
+                        <i class="sidebar-button-icon fa fa-rss" aria-hidden="true"></i>
+                        <span class="sidebar-button-desc">RSS</span>
+                    </a>
+            </li>
+            
+        </ul>
+        
+    </div>
+</nav>
+
+            
+        <div class="post-header-cover
+                    text-center
+                    post-header-cover--partial"
+             style="background-image:url('https://www.eetasia.com/wp-content/uploads/sites/2/images/c806bc6b-a80c-4ed7-808e-3cc362811e28.jpg');"
+             data-behavior="5">
+            
+                <div class="post-header main-content-wrap text-center">
+    
+        <h1 class="post-title">
+            Serverless Computing
+        </h1>
+    
+    
+        <div class="post-meta">
+    <time datetime="2020-09-09T04:13:11+08:00">
+	
+		    Sep 09, 2020
+    	
+    </time>
+    
+        <span>in </span>
+        
+    <a class="category-link" href="/categories/Study-Notes/">Study Notes</a>
+
+
+    
+</div>
+
+    
+</div>
+
+            
+        </div>
+
+            <div id="main" data-behavior="5"
+                 class="hasCover
+                        hasCoverMetaIn
+                        ">
+                
+<article class="post">
+    
+    
+    <div class="post-content markdown">
+        <div class="main-content-wrap">
+            <h1 id="Serverless-Computing-One-Step-Forward-Two-Steps-Back"><a href="#Serverless-Computing-One-Step-Forward-Two-Steps-Back" class="headerlink" title="Serverless Computing: One Step Forward, Two Steps Back"></a>Serverless Computing: One Step Forward, Two Steps Back</h1><p>A FaaS offering by itself is of little value, since each function execution is isolated and ephemeral. Building applications on FaaS requires data management in both persistent and temporary storage.</p>
+<p>As a result, cloud providers are quick to emphasize that serverless is not only FaaS. It is FaaS supported by a <strong>“standard library”: the various multitenanted, autoscaling services provided by the vendor.</strong></p>
+<!-- ### Forward
+
+It is autoscaling. The workload automatically drives the allocation and deallocation of resources.
+
+## Two Major Backward.
+
+First, they painfully ignore the importance of efficient data processing. 
+
+Second, they stymie the development of distributed systems. -->
+
+<h2 id="Three-Design-Patterns"><a href="#Three-Design-Patterns" class="headerlink" title="Three Design Patterns"></a>Three Design Patterns</h2><p>Embarrassingly parallel functions</p>
+<blockquote>
+<p>In some applications, each function invocation is an independent task and never needs to communicate with other functions.</p>
+</blockquote>
+<p>Orchestration functions</p>
+<blockquote>
+<p>A second class of use cases leverages serverless functions simply to orchestrate calls to proprietary autoscaling services, such as large-scale analytics.</p>
+</blockquote>
+<p>Function Composition</p>
+<blockquote>
+<p>The third category consists of collections of functions that are composed to build applications and thus need to pass along outputs and inputs.</p>
+</blockquote>
+<h2 id="Serverless-Is-Too-Less"><a href="#Serverless-Is-Too-Less" class="headerlink" title="Serverless Is Too Less"></a>Serverless Is Too Less</h2><p>Serverless computing today is at best a simple and powerful way to run embarrassingly parallel computations or harness proprietary services.</p>
+<p><strong>The limitations in today’s FaaS offerings:</strong></p>
+<p>(1). Limited Lifetimes</p>
+<p>After 15 minutes, function invocations are shut down by the Lambda infrastructure. </p>
+<p>There is no way to ensure that subsequent invocations are run on the same VM. Hence functions must be written assuming that state will not be recoverable across invocations.</p>
+<p>(2). I/O Bottlenecks</p>
+<p>Recent studies show that a single Lambda function can achieve on average 538Mbps network bandwidth.</p>
+<p>Worse, AWS appears to attempt to pack Lambda functions from the same user together on a single VM, so the limited bandwidth is shared by multiple functions.</p>
+<p>(3). Communication Through Slow Storage</p>
+<p>Two Lambda functions can only communicate through an autoscaling intermediary service.</p>
+<p>Hence maintaining state across client calls requires writing the state out to slow storage, and reading it back on every subsequent call.</p>
+<p><strong>A number of corollaries follow directly.</strong></p>
+<p>FaaS is a Data-Shipping Architecture</p>
+<blockquote>
+<p>FaaS routinely “ships data to code” rather than “shipping code to data.”</p>
+</blockquote>
+<p>FaaS Stymies Distributed Computing</p>
+<blockquote>
+<p>Two functions can work together serverlessly only by passing data through slow and expensive storage.</p>
+</blockquote>
+<h2 id="Case-Studies-Model-Training"><a href="#Case-Studies-Model-Training" class="headerlink" title="Case Studies: Model Training"></a>Case Studies: Model Training</h2><p>(1). Lambda:</p>
+<p>Each Lambda is allocated the maximum lifetime (15 min) and 640MB RAM and runs as many training iterations as possible.</p>
+<p>Each iteration in Lambda took <strong>3.08 seconds</strong>: 2.49 to fetch a 100MB batch from S3 and 0.59 seconds to run the AdamOptimizer.</p>
+<p>We trained the model over 10 full passes of the training data, which translates to <strong>31 sequential lambda executions</strong>, each of which runs for 15 minutes, or 465 minutes total latency. This costs $0.29.</p>
+<p>(2). Tensorflow</p>
+<p>For comparison, we trained the same model on an m4.large EC2 instance, which has 8GB of RAM and 2vCPUs. In this setting, each iteration is significantly faster <strong>(0.14 seconds)</strong>: 0.04 seconds to fetch data from an EBS volume and 0.1 seconds to run the optimizer.</p>
+<p>The same training process takes about 1300 seconds (just under 22 minutes), which translates to a cost of $0.04.</p>
+<p>Lambda’s limited resources and data-shipping architecture mean that running this algorithm on Lambda is 21× slower and 7.3× more expensive than running on EC2.</p>
+<h2 id="Case-Studies-Prediction-Serving"><a href="#Case-Studies-Prediction-Serving" class="headerlink" title="Case Studies: Prediction Serving"></a>Case Studies: Prediction Serving</h2><p>In practice, prediction serving relies on access to specialized hardware like GPUs, which are not available through AWS Lambda.</p>
+<p>To that end, we exercised Lambda’s favored service for batching inputs: AWS Simple Queueing Service (SQS). Our model in this experiment is a simple blacklist of dirty words. SQS only allows batches of 10 messages at a time, so we limited all experiments here to 10-message batches.</p>
+<p>The average latency over 1,000 batch invocations for the Lambda application was <strong>559ms</strong> per batch if the model was retrieved on every invocation and results written back to S3 and was <strong>447ms</strong> when results were placed back into an SQS queue.</p>
+<p>The first replaced Lambda’s role in the application with an EC2 machine to receive SQS message batches—this showed a latency of <strong>13ms</strong> per batch averaged over 1,000 batches—27× faster than our “optimized” Lambda implementation. </p>
+<p>The second experiment used ZeroMQ to replace SQS’s role in the application, and receive messages directly on the EC2 machine. This “serverful” version had a per batch latency of <strong>2.8ms</strong>—127× faster than the optimized Lambda implementation.</p>
+<p>SQS request rate alone would cost $1,584 per hour. </p>
+<h2 id="Case-Studies-Distributed-Computing"><a href="#Case-Studies-Distributed-Computing" class="headerlink" title="Case Studies: Distributed Computing"></a>Case Studies: Distributed Computing</h2><p>try alternative solutions to achieve distributed computation.</p>
+<img src="1.png" style="width:800px;"/>
+
+<p>First we measure the pure functional, event-driven programming cost of a 1KB object being handled by a Lambda function invocation—this incurs both I/O and function overheads and is exorbitantly expensive5. Next we measure the cost of explicit I/O from Lambda, namely an average write+read from a long-running function—this is still over an order of magnitude slower than one would like.</p>
+<p>We see that latencies from EC2 are almost identical, so the overhead is in the storage service costs, not in Lambda.</p>
+<p>Finally we show the latency of (acked) messaging using Python functions directly addressing each other via ZeroMQ. This last cost is close to typical intra-rack datacenter network measurements; studies from even a few years ago report average inter-rack measurements around 1.26ms</p>
+<p>In sum, communicating via cloud storage is not a reasonable replacement for directly-addressed networking, even with direct I/O.</p>
+<p>DynamoDB as a fine-grained communication medium is incredibly expensive: Supporting a cluster of 1,000 nodes costs at minimum $450 per hour.</p>
+<h1 id="Cirrus-a-Serverless-Framework-for-End-to-end-MLWorkflows"><a href="#Cirrus-a-Serverless-Framework-for-End-to-end-MLWorkflows" class="headerlink" title="Cirrus: a Serverless Framework for End-to-end MLWorkflows"></a>Cirrus: a Serverless Framework for End-to-end MLWorkflows</h1><p>This work proposes Cirrus, a distributed ML training framework that addresses these challenges by leveraging serverless computing.</p>
+<h2 id="End-to-end-MLWorkflow-Challenges"><a href="#End-to-end-MLWorkflow-Challenges" class="headerlink" title="End-to-end MLWorkflow Challenges"></a>End-to-end MLWorkflow Challenges</h2><p><strong>Over-provisioning</strong></p>
+<blockquote>
+<p>The heterogeneity of the different tasks in an MLworkflowleads to a significant resource imbalance during the execution of a training workflow.</p>
+</blockquote>
+<p><strong>Explicit resource management</strong></p>
+<blockquote>
+<p>The established approach of exposing low-level VM resources, such as storage and CPUs, puts a significant burden on ML developers who are faced with the challenge of provisioning, configuring, and managing these resources for each of their ML workloads.</p>
+</blockquote>
+<h2 id="Serverless-Computing"><a href="#Serverless-Computing" class="headerlink" title="Serverless Computing"></a>Serverless Computing</h2><p>major limitations of existing serverless environments:</p>
+<p><strong>Small local memory and storage</strong></p>
+<blockquote>
+<p>AWS lambdas can only access at most 3GB of local RAM and 512MB of local disk</p>
+</blockquote>
+<p><strong>Lowbandwidth and lack of P2P communication</strong></p>
+<blockquote>
+<p>We find that the largest AWS Lambda can only sustain 60MB/s of bandwidth. AWS Lambdas do not allow peer-to-peer communication. Thus, common communication strategies used for datacenter ML, such as tree-structured or ring-structured AllReduce communication [43], become impossible to implement efficiently in such environments.</p>
+</blockquote>
+<p><strong>Short-lived and unpredictable launch times</strong></p>
+<blockquote>
+<p>AWS lambdas can take up to several minutes to start after being launched. This means that during training, lambdas start at unpredictable times and can finish in the middle of training. This requires ML runtimes for lambdas to tolerate the frequent departure and arrival of workers.</p>
+</blockquote>
+<p><strong>Lack of fast shared storage</strong></p>
+<blockquote>
+<p>shared storage needs to be low-latency, high-throughput, and optimized for the type of communications in ML workloads.</p>
+</blockquote>
+<h2 id="CIRRUS-DESIGN"><a href="#CIRRUS-DESIGN" class="headerlink" title="CIRRUS DESIGN"></a>CIRRUS DESIGN</h2><img src="2.png" style="width:800px;"/>
+
+<p>Design Principles:</p>
+<ul>
+<li>Adaptive, fine-grained resource allocation.</li>
+<li>Stateless server-side backend.</li>
+<li>End-to-end serverless API.</li>
+<li>High scalability.</li>
+</ul>
+<p>(1) Worker runtime</p>
+<p>The system runtime meets two goals: 1) lightweight, and 2) high-performance.</p>
+<p>The worker runtime provides two interfaces. </p>
+<p>First, it provides a smart iterator for training datasets stored in S3. This iterator prefetches and buffers minibatches in the lambda’s local memory in parallel with the worker’s computations to mitigate the high latency (&gt;10ms) of accessing S3.</p>
+<p>Second, it provides an API for the distributed data store. This API implements: data compression, sparse transfers of data, asynchronous communication and sharding across multiple nodes.</p>
+<p>(2) Distributed data store</p>
+<p>Cirrus’s data store serves the purpose of storing intermediate data to be shared by all workers.</p>
+<p>To achieve low-latency, we deploy our data store in cloud VMs. It achieves latencies as low as 300μs versus ≈ 10ms for AWS S3.</p>
+<h2 id="API-Example"><a href="#API-Example" class="headerlink" title="API Example"></a>API Example</h2><img src="3.png" style="width:800px;"/>
+
+<p>The first step in the workflow with Cirrus is to load the dataset and upload it to S3. </p>
+<p>Cirrus parses the data, automatically creates partitions for it and then uploads it to S3. The front-end partitions datasets in blocks of roughly 10MB. </p>
+<p>We chose this size because data partitions in Cirrus are the granularity of data workers transfer from S3. We have found this size allows lambda workers to achieve good network transfer bandwidth. In addition, this keeps the size of each worker’s minibatch cache small.</p>
+<h2 id="Cirrus-Implementation"><a href="#Cirrus-Implementation" class="headerlink" title="Cirrus Implementation"></a>Cirrus Implementation</h2><p>(1) Client backend</p>
+<p>Lambdas that are launched during training are relaunched automatically when their lifetime terminates (every 15 minutes).</p>
+<p>The backend keeps a pool of threads that can be used for responding to requests for new lambda tasks.</p>
+<p>(2) Distributed data store</p>
+<p>Cirrus’s distributed data store provides an interface supporting a key-value store interface (set/get) and a parameter-server interface (send gradient / get model).</p>
+<p>several optimizations:</p>
+<ul>
+<li>multithreaded server that distributes work across many cores</li>
+<li>data compression for the gradientand models</li>
+<li>sparse gradient and model data structures</li>
+</ul>
+<p>(3) Worker runtime</p>
+<img src="4.png" style="width:800px;"/>
+
+<p>For data access, the runtime provides a minibatch-based iterator backed by a local memory ring-buffer that allows workers to access training minibatches with low latency. </p>
+<p>In addition, it provides an efficient API to communicate with the distributed data store.</p>
+<h2 id="EVALUATION"><a href="#EVALUATION" class="headerlink" title="EVALUATION"></a>EVALUATION</h2><img src="5.png" style="width:800px;"/>
+
+
+
+            
+
+
+        </div>
+    </div>
+    <div id="post-footer" class="post-footer main-content-wrap">
+        
+            <div class="post-footer-tags">
+                <span class="text-color-light text-small">TAGGED IN</span><br/>
+                
+    <a class="tag tag--primary tag--small t-link" href="/tags/Deep-Learning/" rel="tag">Deep Learning</a> <a class="tag tag--primary tag--small t-link" href="/tags/Tools/" rel="tag">Tools</a>
+
+            </div>
+        
+        
+            <div class="post-actions-wrap">
+    <nav>
+        <ul class="post-actions post-action-nav">
+            <li class="post-action">
+                
+                    <a
+                        class="post-action-btn btn btn--disabled"
+                        aria-hidden="true"
+                    >
+                        
+                        <i class="fa fa-angle-left" aria-hidden="true"></i>
+                        <span class="hide-xs hide-sm text-small icon-ml">PREVIOUS</span>
+                    </a>
+            </li>
+            <li class="post-action">
+                
+                    
+                <a
+                    class="post-action-btn btn btn--default tooltip--top"
+                    href="/2020/09/02/Model-Serving/"
+                    data-tooltip="Model Serving"
+                    aria-label="NEXT: Model Serving"
+                >
+                    
+                        <span class="hide-xs hide-sm text-small icon-mr">NEXT</span>
+                        <i class="fa fa-angle-right" aria-hidden="true"></i>
+                    </a>
+            </li>
+        </ul>
+    </nav>
+    <ul class="post-actions post-action-share">
+        <li class="post-action hide-lg hide-md hide-sm">
+            <a
+                class="post-action-btn btn btn--default btn-open-shareoptions"
+                href="#btn-open-shareoptions"
+                aria-label="Share this post"
+            >
+                <i class="fa fa-share-alt" aria-hidden="true"></i>
+            </a>
+        </li>
+        
+            
+            
+            <li class="post-action hide-xs">
+                <a
+                    class="post-action-btn btn btn--default"
+                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.github.io/2020/09/09/Serverless-Computing/"
+                    title="Share on Facebook"
+                    aria-label="Share on Facebook"
+                >
+                    <i class="fab fa-facebook" aria-hidden="true"></i>
+                </a>
+            </li>
+        
+            
+            
+            <li class="post-action hide-xs">
+                <a
+                    class="post-action-btn btn btn--default"
+                    target="new" href="https://twitter.com/intent/tweet?text=https://joddiy.github.io/2020/09/09/Serverless-Computing/"
+                    title="Share on Twitter"
+                    aria-label="Share on Twitter"
+                >
+                    <i class="fab fa-twitter" aria-hidden="true"></i>
+                </a>
+            </li>
+        
+            
+            
+            <li class="post-action hide-xs">
+                <a
+                    class="post-action-btn btn btn--default"
+                    target="new" href="https://plus.google.com/share?url=https://joddiy.github.io/2020/09/09/Serverless-Computing/"
+                    title="Share on Google+"
+                    aria-label="Share on Google+"
+                >
+                    <i class="fab fa-google-plus" aria-hidden="true"></i>
+                </a>
+            </li>
+        
+            
+            
+            <li class="post-action hide-xs">
+                <a
+                    class="post-action-btn btn btn--default"
+                    target="new" href="https://www.linkedin.com/shareArticle?mini=true&amp;url=https://joddiy.github.io/2020/09/09/Serverless-Computing/"
+                    title="global.share_on_linkedin"
+                    aria-label="global.share_on_linkedin"
+                >
+                    <i class="fab fa-linkedin" aria-hidden="true"></i>
+                </a>
+            </li>
+        
+            
+            
+            <li class="post-action hide-xs">
+                <a
+                    class="post-action-btn btn btn--default"
+                    target="new" href="http://service.weibo.com/share/share.php?&amp;title=https://joddiy.github.io/2020/09/09/Serverless-Computing/"
+                    title="Share on Weibo"
+                    aria-label="Share on Weibo"
+                >
+                    <i class="fab fa-weibo" aria-hidden="true"></i>
+                </a>
+            </li>
+        
+        
+            
+                <li class="post-action">
+                    <a
+                        class="post-action-btn btn btn--default"
+                        href="#gitalk"
+                        aria-label="Leave a comment"
+                    >
+                        <i class="fa fa-comment"></i>
+                    </a>
+                </li>
+            
+        
+        <li class="post-action">
+            
+                <a class="post-action-btn btn btn--default" href="#" aria-label="Back to top">
+            
+                <i class="fa fa-list" aria-hidden="true"></i>
+            </a>
+        </li>
+    </ul>
+</div>
+
+
+        
+        
+            
+                <div id="gitalk"></div>
+
+            
+        
+    </div>
+</article>
+
+
+
+                <footer id="footer" class="main-content-wrap">
+    <span class="copyrights">
+        Copyrights &copy; 2020 Joddiy Zhang. All Rights Reserved.
+    </span>
+</footer>
+
+            </div>
+            
+                <div id="bottom-bar" class="post-bottom-bar" data-behavior="5">
+                    <div class="post-actions-wrap">
+    <nav>
+        <ul class="post-actions post-action-nav">
+            <li class="post-action">
+                
+                    <a
+                        class="post-action-btn btn btn--disabled"
+                        aria-hidden="true"
+                    >
+                        
+                        <i class="fa fa-angle-left" aria-hidden="true"></i>
+                        <span class="hide-xs hide-sm text-small icon-ml">PREVIOUS</span>
+                    </a>
+            </li>
+            <li class="post-action">
+                
+                    
+                <a
+                    class="post-action-btn btn btn--default tooltip--top"
+                    href="/2020/09/02/Model-Serving/"
+                    data-tooltip="Model Serving"
+                    aria-label="NEXT: Model Serving"
+                >
+                    
+                        <span class="hide-xs hide-sm text-small icon-mr">NEXT</span>
+                        <i class="fa fa-angle-right" aria-hidden="true"></i>
+                    </a>
+            </li>
+        </ul>
+    </nav>
+    <ul class="post-actions post-action-share">
+        <li class="post-action hide-lg hide-md hide-sm">
+            <a
+                class="post-action-btn btn btn--default btn-open-shareoptions"
+                href="#btn-open-shareoptions"
+                aria-label="Share this post"
+            >
+                <i class="fa fa-share-alt" aria-hidden="true"></i>
+            </a>
+        </li>
+        
+            
+            
+            <li class="post-action hide-xs">
+                <a
+                    class="post-action-btn btn btn--default"
+                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.github.io/2020/09/09/Serverless-Computing/"
+                    title="Share on Facebook"
+                    aria-label="Share on Facebook"
+                >
+                    <i class="fab fa-facebook" aria-hidden="true"></i>
+                </a>
+            </li>
+        
+            
+            
+            <li class="post-action hide-xs">
+                <a
+                    class="post-action-btn btn btn--default"
+                    target="new" href="https://twitter.com/intent/tweet?text=https://joddiy.github.io/2020/09/09/Serverless-Computing/"
+                    title="Share on Twitter"
+                    aria-label="Share on Twitter"
+                >
+                    <i class="fab fa-twitter" aria-hidden="true"></i>
+                </a>
+            </li>
+        
+            
+            
+            <li class="post-action hide-xs">
+                <a
+                    class="post-action-btn btn btn--default"
+                    target="new" href="https://plus.google.com/share?url=https://joddiy.github.io/2020/09/09/Serverless-Computing/"
+                    title="Share on Google+"
+                    aria-label="Share on Google+"
+                >
+                    <i class="fab fa-google-plus" aria-hidden="true"></i>
+                </a>
+            </li>
+        
+            
+            
+            <li class="post-action hide-xs">
+                <a
+                    class="post-action-btn btn btn--default"
+                    target="new" href="https://www.linkedin.com/shareArticle?mini=true&amp;url=https://joddiy.github.io/2020/09/09/Serverless-Computing/"
+                    title="global.share_on_linkedin"
+                    aria-label="global.share_on_linkedin"
+                >
+                    <i class="fab fa-linkedin" aria-hidden="true"></i>
+                </a>
+            </li>
+        
+            
+            
+            <li class="post-action hide-xs">
+                <a
+                    class="post-action-btn btn btn--default"
+                    target="new" href="http://service.weibo.com/share/share.php?&amp;title=https://joddiy.github.io/2020/09/09/Serverless-Computing/"
+                    title="Share on Weibo"
+                    aria-label="Share on Weibo"
+                >
+                    <i class="fab fa-weibo" aria-hidden="true"></i>
+                </a>
+            </li>
+        
+        
+            
+                <li class="post-action">
+                    <a
+                        class="post-action-btn btn btn--default"
+                        href="#gitalk"
+                        aria-label="Leave a comment"
+                    >
+                        <i class="fa fa-comment"></i>
+                    </a>
+                </li>
+            
+        
+        <li class="post-action">
+            
+                <a class="post-action-btn btn btn--default" href="#" aria-label="Back to top">
+            
+                <i class="fa fa-list" aria-hidden="true"></i>
+            </a>
+        </li>
+    </ul>
+</div>
+
+
+                </div>
+                
+    <div id="share-options-bar" class="share-options-bar" data-behavior="5">
+        <i id="btn-close-shareoptions" class="fa fa-times"></i>
+        <ul class="share-options">
+            
+                
+                
+                <li class="share-option">
+                    <a
+                        class="share-option-btn"
+                        target="new"
+                        href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.github.io/2020/09/09/Serverless-Computing/"
+                        aria-label="Share on Facebook"
+                    >
+                        <i class="fab fa-facebook" aria-hidden="true"></i><span>Share on Facebook</span>
+                    </a>
+                </li>
+            
+                
+                
+                <li class="share-option">
+                    <a
+                        class="share-option-btn"
+                        target="new"
+                        href="https://twitter.com/intent/tweet?text=https://joddiy.github.io/2020/09/09/Serverless-Computing/"
+                        aria-label="Share on Twitter"
+                    >
+                        <i class="fab fa-twitter" aria-hidden="true"></i><span>Share on Twitter</span>
+                    </a>
+                </li>
+            
+                
+                
+                <li class="share-option">
+                    <a
+                        class="share-option-btn"
+                        target="new"
+                        href="https://plus.google.com/share?url=https://joddiy.github.io/2020/09/09/Serverless-Computing/"
+                        aria-label="Share on Google+"
+                    >
+                        <i class="fab fa-google-plus" aria-hidden="true"></i><span>Share on Google+</span>
+                    </a>
+                </li>
+            
+                
+                
+                <li class="share-option">
+                    <a
+                        class="share-option-btn"
+                        target="new"
+                        href="https://www.linkedin.com/shareArticle?mini=true&amp;url=https://joddiy.github.io/2020/09/09/Serverless-Computing/"
+                        aria-label="global.share_on_linkedin"
+                    >
+                        <i class="fab fa-linkedin" aria-hidden="true"></i><span>global.share_on_linkedin</span>
+                    </a>
+                </li>
+            
+                
+                
+                <li class="share-option">
+                    <a
+                        class="share-option-btn"
+                        target="new"
+                        href="http://service.weibo.com/share/share.php?&amp;title=https://joddiy.github.io/2020/09/09/Serverless-Computing/"
+                        aria-label="Share on Weibo"
+                    >
+                        <i class="fab fa-weibo" aria-hidden="true"></i><span>Share on Weibo</span>
+                    </a>
+                </li>
+            
+        </ul>
+    </div>
+
+
+            
+        </div>
+        
+
+
+    
+        
+    
+
+<div id="about">
+    <div id="about-card">
+        <div id="about-btn-close">
+            <i class="fa fa-times"></i>
+        </div>
+        
+            <img id="about-card-picture" src="/assets/images/14108933.jpeg" alt="Author&#39;s picture"/>
+        
+            <h4 id="about-card-name">Joddiy Zhang</h4>
+        
+            <div id="about-card-bio"><p><a href="mailto:joddiyzhang@gmail.com">joddiyzhang@gmail.com</a></p>
+</div>
+        
+        
+            <div id="about-card-job">
+                <i class="fa fa-briefcase"></i>
+                <br/>
+                <p>Data Engineer</p>
+
+            </div>
+        
+        
+            <div id="about-card-location">
+                <i class="fa fa-map-marker-alt"></i>
+                <br/>
+                Singapore
+            </div>
+        
+    </div>
+</div>
+
+        
+        
+<div id="cover" style="background-image:url('/assets/images/cover.jpg');"></div>
+        <!--SCRIPTS-->
+
+<script src="/assets/js/script-nepw8mgf4vymyzpmseeyse3uwwhc5nmbchi76kdesjlnnpygoxxx0gguzbet.min.js"></script>
+
+<!--SCRIPTS END-->
+
+
+    
+        
+<script src="/assets/js/gitalk.js"></script>
+
+        <script type="text/javascript">
+          (function() {
+            new Gitalk({
+              clientID: 'bee9685b2dc9739b6bd5',
+              clientSecret: 'a0c683f383a94fae6d021ab932f37f7e56899410',
+              repo: 'joddiy.github.io',
+              owner: 'joddiy',
+              admin: ['joddiy'],
+              id: '2020/09/09/Serverless-Computing/',
+              ...{"language":"en","perPage":10,"distractionFreeMode":false,"enableHotKey":true,"pagerDirection":"first"}
+            }).render('gitalk')
+          })()
+        </script>
+    
+
+
+
+
+    </body>
+</html>

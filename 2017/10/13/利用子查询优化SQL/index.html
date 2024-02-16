@@ -10,14 +10,14 @@
     <meta name="author" content="Joddiy Zhang">
     
     
-        <link rel="icon" href="https://joddiy.cc/assets/images/favicon.ico">
+        <link rel="icon" href="https://joddiy.github.io/assets/images/favicon.ico">
     
     
-    <script type="application/ld+json">{"@context":"http://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"Joddiy Zhang","sameAs":["https://github.com/joddiy","https://scholar.google.com/citations?user=KH-xv38AAAAJ&hl=en&oi=sra","https://www.linkedin.com/in/joddiyzhang/"],"image":"14108933.jpeg"},"articleBody":"场景A 表中大约有 50 万行数据，其中有一个 a 字段，其上未加索引，不同的 a 有大约 3000 个。\n要求指定了 250 个 a ，要求判断其中多少个在 A 表中出现过。\n第一版 SQL123SELECT DISTINCT aFROM `A`WHERE a IN (250个指定 a)\n\n执行速度约 40秒\n第二版 SQL1234SELECT * FROM    (SELECT DISTINCT a        FROM `A`) AS tWHERE t.a IN (250个指定 a)\n\n执行速度约 0.7秒\n分析原因\n因为 a 上未加索引，直接 where 条件 in 的话会对 50 万行原始数据依次比较是否在 250 个指定 a 中，比较次数为 50万*250 &#x3D; 1.25 亿次\n如果先 distinct 全部，再子查询 in，只会在 distinct 的 3000 个结果中依次比较 250 个指定 a，比较次数为 50万+3000*250 &#x3D; 80 万次\n\n结论在未加索引的字段上面进行大量 in 操作，使用子查询先预筛选，可以达到近似索引的效果。\n","dateCreated":"2017-10-13T17:23:36+08:00","dateModified":"2020-05-11T15:10:57+08:00","datePublished":"2017-10-13T17:23:36+08:00","description":"Some tips for mysql","headline":"利用子查询优化SQL","image":["https://cdn.iconscout.com/icon/free/png-256/mysql-3-226025.png","https://kinsta.com/wp-content/uploads/2019/04/what-is-mysql-1.png"],"mainEntityOfPage":{"@type":"WebPage","@id":"https://joddiy.cc/2017/10/13/%E5%88%A9%E7%94%A8%E5%AD%90%E6%9F%A5%E8%AF%A2%E4%BC%98%E5%8C%96SQL/"},"publisher":{"@type":"Organization","name":"Joddiy Zhang","sameAs":["https://github.com/joddiy","https://scholar.google.com/citations?user=KH-xv38AAAAJ&hl=en&oi=sra","https://www.linkedin.com/in/joddiyzhang/"],"image":"14108933.jpeg","logo":{"@type":"ImageObject","url":"14108933.jpeg"}},"url":"https://joddiy.cc/2017/10/13/%E5%88%A9%E7%94%A8%E5%AD%90%E6%9F%A5%E8%AF%A2%E4%BC%98%E5%8C%96SQL/","keywords":"研究向, SQL","thumbnailUrl":"https://cdn.iconscout.com/icon/free/png-256/mysql-3-226025.png"}</script>
+    <script type="application/ld+json">{"@context":"http://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"Joddiy Zhang","sameAs":["https://github.com/joddiy","https://scholar.google.com/citations?user=KH-xv38AAAAJ&hl=en&oi=sra","https://www.linkedin.com/in/joddiyzhang/"],"image":"14108933.jpeg"},"articleBody":"场景A 表中大约有 50 万行数据，其中有一个 a 字段，其上未加索引，不同的 a 有大约 3000 个。\n要求指定了 250 个 a ，要求判断其中多少个在 A 表中出现过。\n第一版 SQL123SELECT DISTINCT aFROM `A`WHERE a IN (250个指定 a)\n\n执行速度约 40秒\n第二版 SQL1234SELECT * FROM    (SELECT DISTINCT a        FROM `A`) AS tWHERE t.a IN (250个指定 a)\n\n执行速度约 0.7秒\n分析原因\n因为 a 上未加索引，直接 where 条件 in 的话会对 50 万行原始数据依次比较是否在 250 个指定 a 中，比较次数为 50万*250 &#x3D; 1.25 亿次\n如果先 distinct 全部，再子查询 in，只会在 distinct 的 3000 个结果中依次比较 250 个指定 a，比较次数为 50万+3000*250 &#x3D; 80 万次\n\n结论在未加索引的字段上面进行大量 in 操作，使用子查询先预筛选，可以达到近似索引的效果。\n","dateCreated":"2017-10-13T17:23:36+08:00","dateModified":"2020-05-11T15:10:57+08:00","datePublished":"2017-10-13T17:23:36+08:00","description":"Some tips for mysql","headline":"利用子查询优化SQL","image":["https://cdn.iconscout.com/icon/free/png-256/mysql-3-226025.png","https://kinsta.com/wp-content/uploads/2019/04/what-is-mysql-1.png"],"mainEntityOfPage":{"@type":"WebPage","@id":"https://joddiy.github.io/2017/10/13/%E5%88%A9%E7%94%A8%E5%AD%90%E6%9F%A5%E8%AF%A2%E4%BC%98%E5%8C%96SQL/"},"publisher":{"@type":"Organization","name":"Joddiy Zhang","sameAs":["https://github.com/joddiy","https://scholar.google.com/citations?user=KH-xv38AAAAJ&hl=en&oi=sra","https://www.linkedin.com/in/joddiyzhang/"],"image":"14108933.jpeg","logo":{"@type":"ImageObject","url":"14108933.jpeg"}},"url":"https://joddiy.github.io/2017/10/13/%E5%88%A9%E7%94%A8%E5%AD%90%E6%9F%A5%E8%AF%A2%E4%BC%98%E5%8C%96SQL/","keywords":"研究向, SQL","thumbnailUrl":"https://cdn.iconscout.com/icon/free/png-256/mysql-3-226025.png"}</script>
     <meta name="description" content="Some tips for mysql">
 <meta property="og:type" content="blog">
 <meta property="og:title" content="利用子查询优化SQL">
-<meta property="og:url" content="https://joddiy.cc/2017/10/13/%E5%88%A9%E7%94%A8%E5%AD%90%E6%9F%A5%E8%AF%A2%E4%BC%98%E5%8C%96SQL/index.html">
+<meta property="og:url" content="https://joddiy.github.io/2017/10/13/%E5%88%A9%E7%94%A8%E5%AD%90%E6%9F%A5%E8%AF%A2%E4%BC%98%E5%8C%96SQL/index.html">
 <meta property="og:site_name" content="Jz Blog">
 <meta property="og:description" content="Some tips for mysql">
 <meta property="og:locale" content="en_US">
@@ -32,7 +32,7 @@
         
     
     
-        <meta property="og:image" content="https://joddiy.cc/assets/images/14108933.jpeg"/>
+        <meta property="og:image" content="https://joddiy.github.io/assets/images/14108933.jpeg"/>
     
     
         <meta property="og:image" content="https://cdn.iconscout.com/icon/free/png-256/mysql-3-226025.png"/>
@@ -375,7 +375,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.cc/2017/10/13/%E5%88%A9%E7%94%A8%E5%AD%90%E6%9F%A5%E8%AF%A2%E4%BC%98%E5%8C%96SQL/"
+                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.github.io/2017/10/13/%E5%88%A9%E7%94%A8%E5%AD%90%E6%9F%A5%E8%AF%A2%E4%BC%98%E5%8C%96SQL/"
                     title="Share on Facebook"
                     aria-label="Share on Facebook"
                 >
@@ -388,7 +388,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://twitter.com/intent/tweet?text=https://joddiy.cc/2017/10/13/%E5%88%A9%E7%94%A8%E5%AD%90%E6%9F%A5%E8%AF%A2%E4%BC%98%E5%8C%96SQL/"
+                    target="new" href="https://twitter.com/intent/tweet?text=https://joddiy.github.io/2017/10/13/%E5%88%A9%E7%94%A8%E5%AD%90%E6%9F%A5%E8%AF%A2%E4%BC%98%E5%8C%96SQL/"
                     title="Share on Twitter"
                     aria-label="Share on Twitter"
                 >
@@ -401,7 +401,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://plus.google.com/share?url=https://joddiy.cc/2017/10/13/%E5%88%A9%E7%94%A8%E5%AD%90%E6%9F%A5%E8%AF%A2%E4%BC%98%E5%8C%96SQL/"
+                    target="new" href="https://plus.google.com/share?url=https://joddiy.github.io/2017/10/13/%E5%88%A9%E7%94%A8%E5%AD%90%E6%9F%A5%E8%AF%A2%E4%BC%98%E5%8C%96SQL/"
                     title="Share on Google+"
                     aria-label="Share on Google+"
                 >
@@ -503,7 +503,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.cc/2017/10/13/%E5%88%A9%E7%94%A8%E5%AD%90%E6%9F%A5%E8%AF%A2%E4%BC%98%E5%8C%96SQL/"
+                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.github.io/2017/10/13/%E5%88%A9%E7%94%A8%E5%AD%90%E6%9F%A5%E8%AF%A2%E4%BC%98%E5%8C%96SQL/"
                     title="Share on Facebook"
                     aria-label="Share on Facebook"
                 >
@@ -516,7 +516,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://twitter.com/intent/tweet?text=https://joddiy.cc/2017/10/13/%E5%88%A9%E7%94%A8%E5%AD%90%E6%9F%A5%E8%AF%A2%E4%BC%98%E5%8C%96SQL/"
+                    target="new" href="https://twitter.com/intent/tweet?text=https://joddiy.github.io/2017/10/13/%E5%88%A9%E7%94%A8%E5%AD%90%E6%9F%A5%E8%AF%A2%E4%BC%98%E5%8C%96SQL/"
                     title="Share on Twitter"
                     aria-label="Share on Twitter"
                 >
@@ -529,7 +529,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://plus.google.com/share?url=https://joddiy.cc/2017/10/13/%E5%88%A9%E7%94%A8%E5%AD%90%E6%9F%A5%E8%AF%A2%E4%BC%98%E5%8C%96SQL/"
+                    target="new" href="https://plus.google.com/share?url=https://joddiy.github.io/2017/10/13/%E5%88%A9%E7%94%A8%E5%AD%90%E6%9F%A5%E8%AF%A2%E4%BC%98%E5%8C%96SQL/"
                     title="Share on Google+"
                     aria-label="Share on Google+"
                 >
@@ -573,7 +573,7 @@
                     <a
                         class="share-option-btn"
                         target="new"
-                        href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.cc/2017/10/13/%E5%88%A9%E7%94%A8%E5%AD%90%E6%9F%A5%E8%AF%A2%E4%BC%98%E5%8C%96SQL/"
+                        href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.github.io/2017/10/13/%E5%88%A9%E7%94%A8%E5%AD%90%E6%9F%A5%E8%AF%A2%E4%BC%98%E5%8C%96SQL/"
                         aria-label="Share on Facebook"
                     >
                         <i class="fab fa-facebook" aria-hidden="true"></i><span>Share on Facebook</span>
@@ -586,7 +586,7 @@
                     <a
                         class="share-option-btn"
                         target="new"
-                        href="https://twitter.com/intent/tweet?text=https://joddiy.cc/2017/10/13/%E5%88%A9%E7%94%A8%E5%AD%90%E6%9F%A5%E8%AF%A2%E4%BC%98%E5%8C%96SQL/"
+                        href="https://twitter.com/intent/tweet?text=https://joddiy.github.io/2017/10/13/%E5%88%A9%E7%94%A8%E5%AD%90%E6%9F%A5%E8%AF%A2%E4%BC%98%E5%8C%96SQL/"
                         aria-label="Share on Twitter"
                     >
                         <i class="fab fa-twitter" aria-hidden="true"></i><span>Share on Twitter</span>
@@ -599,7 +599,7 @@
                     <a
                         class="share-option-btn"
                         target="new"
-                        href="https://plus.google.com/share?url=https://joddiy.cc/2017/10/13/%E5%88%A9%E7%94%A8%E5%AD%90%E6%9F%A5%E8%AF%A2%E4%BC%98%E5%8C%96SQL/"
+                        href="https://plus.google.com/share?url=https://joddiy.github.io/2017/10/13/%E5%88%A9%E7%94%A8%E5%AD%90%E6%9F%A5%E8%AF%A2%E4%BC%98%E5%8C%96SQL/"
                         aria-label="Share on Google+"
                     >
                         <i class="fab fa-google-plus" aria-hidden="true"></i><span>Share on Google+</span>

@@ -10,14 +10,14 @@
     <meta name="author" content="Joddiy Zhang">
     
     
-        <link rel="icon" href="https://joddiy.cc/assets/images/favicon.ico">
+        <link rel="icon" href="https://joddiy.github.io/assets/images/favicon.ico">
     
     
-    <script type="application/ld+json">{"@context":"http://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"Joddiy Zhang","sameAs":["https://github.com/joddiy","https://scholar.google.com/citations?user=KH-xv38AAAAJ&hl=en&oi=sra","https://www.linkedin.com/in/joddiyzhang/"],"image":"14108933.jpeg"},"articleBody":"C++ 数据类型基本的内置类型bool char int float double void wchar_t\n枚举类型123enum color &#123; red, green, blue &#125; c; // red = 0, green = 1enum color &#123; red, green=5, blue &#125;; // blue = 6\n\n\nC++ 变量类型C++ 中的变量声明当您使用多个文件且只在其中一个文件中定义变量时（定义变量的文件在程序连接时是可用的），变量声明就显得非常有用。您可以使用 extern 关键字在任何地方声明一个变量。\n123456789101112131415161718192021222324252627#include &lt;iostream&gt;using namespace std; // 变量声明extern int a, b;extern int c;extern float f;  int main ()&#123;  // 变量定义  int a, b;  int c;  float f;   // 实际初始化  a = 10;  b = 20;  c = a + b;   cout &lt;&lt; c &lt;&lt; endl ;   f = 70.0/3.0;  cout &lt;&lt; f &lt;&lt; endl ;   return 0;&#125;\n\n同样的，在函数声明时，提供一个函数名，而函数的实际定义则可以在任何地方进行。例如：\n1234567891011121314// 函数声明int func(); int main()&#123;    // 函数调用    int i = func();&#125; // 函数定义int func()&#123;    return 0;&#125;\n\n\nC++ 常量整数常量前缀指定基数：0x 或 0X 表示十六进制，0 表示八进制，不带前缀则默认表示十进制。\n浮点常量当使用小数形式表示时，必须包含整数部分、小数部分，或同时包含两者。当使用指数形式表示时， 必须包含小数点、指数，或同时包含两者。带符号的指数是用 e 或 E 引入的。\n123.14159       // 合法的 314159E-5L    // 合法的 \n\n\nC++ 存储类下面列出 C++ 程序中可用的存储类：\n\nauto\nregister\nstatic\nextern\nmutable\nthread_local (C++11)\n\nauto 存储类自 C++ 11 以来，auto 关键字用于两种情况：声明变量时根据初始化表达式自动推断该变量的类型、声明函数时函数返回值的占位符。\n1234auto f=3.14;      //doubleauto s(&quot;hello&quot;);  //const char*auto z = new auto(9); // int*auto x1 = 5, x2 = 5.0, x3=&#x27;r&#x27;;//错误，必须是初始化为同一类型\n\nregister 存储类register 存储类用于定义存储在寄存器中而不是 RAM 中的局部变量。这意味着变量的最大尺寸等于寄存器的大小（通常是一个词），且不能对它应用一元的 ‘&amp;’ 运算符（因为它没有内存位置）。\n定义 ‘register’ 并不意味着变量将被存储在寄存器中，它意味着变量可能存储在寄存器中，这取决于硬件和实现的限制。\nstatic 存储类static 存储类指示编译器在程序的生命周期内保持局部变量的存在，而不需要在每次它进入和离开作用域时进行创建和销毁。因此，使用 static 修饰局部变量可以在函数调用之间保持局部变量的值。\nstatic 修饰符也可以应用于全局变量。当 static 修饰全局变量时，会使变量的作用域限制在声明它的文件内。\n在 C++ 中，当 static 用在类数据成员上时，会导致仅有一个该成员的副本被类的所有对象共享。\nextern 存储类mutable 存储类thread_local 存储类使用 thread_local 说明符声明的变量仅可在它在其上创建的线程上访问。 变量在创建线程时创建，并在销毁线程时销毁。 每个线程都有其自己的变量副本。\n可以将 thread_local 仅应用于数据声明和定义，thread_local 不能用于函数声明或定义。\n\nC++ 运算符运算符是一种告诉编译器执行特定的数学或逻辑操作的符号。C++ 内置了丰富的运算符，并提供了以下类型的运算符：\n\n算术运算符\n关系运算符\n逻辑运算符\n位运算符\n赋值运算符\n杂项运算符\n\n杂项运算符下表列出了 C++ 支持的其他一些重要的运算符。\n\n\n\n运算符\n描述\n\n\n\nsizeof\nsizeof 运算符返回变量的大小。例如，sizeof(a) 将返回 4，其中 a 是整数。\n\n\nCondition ? X : Y\n条件运算符。如果 Condition 为真 ? 则值为 X : 否则值为 Y。\n\n\n,\n逗号运算符会顺序执行一系列运算。整个逗号表达式的值是以逗号分隔的列表中的最后一个表达式的值。\n\n\n.（点）和 -&gt;（箭头）\n成员运算符用于引用类、结构和共用体的成员。\n\n\nCast\n强制转换运算符把一种数据类型转换为另一种数据类型。例如，int(2.2000) 将返回 2。\n\n\n&amp;\n指针运算符 &amp; 返回变量的地址。例如 &a; 将给出变量的实际地址。\n\n\n*\n指针运算符 * 指向一个变量。例如，*var; 将指向变量 var。\n\n\nC++ 中的运算符优先级\n\n\n类别\n运算符\n结合性\n\n\n\n后缀\n() [] -&gt; . ++ - -\n从左到右\n\n\n一元\n+ - ! ~ ++ - - (type)* &amp; sizeof\n从右到左\n\n\n乘除\n* &#x2F; %\n从左到右\n\n\n加减\n+ -\n从左到右\n\n\n移位\n&lt;&lt; &gt;&gt;\n从左到右\n\n\n关系\n&lt; &lt;&#x3D; &gt; &gt;&#x3D;\n从左到右\n\n\n相等\n&#x3D;&#x3D; !&#x3D;\n从左到右\n\n\n位与 AND\n&amp;\n从左到右\n\n\n位异或 XOR\n^\n从左到右\n\n\n位或 OR\n\n\n\n\n逻辑与 AND\n&amp;&amp;\n从左到右\n\n\n逻辑或 OR\n\n\n\n\n条件\n?:\n从右到左\n\n\n赋值\n&#x3D; +&#x3D; -&#x3D; *&#x3D; &#x2F;&#x3D; %&#x3D;&gt;&gt;&#x3D; &lt;&lt;&#x3D; &amp;&#x3D; ^&#x3D;\n&#x3D;\n\n\n逗号\n,\n从左到右\n\n\n\nC++ 函数函数参数如果函数要使用参数，则必须声明接受参数值的变量。这些变量称为函数的形式参数。\n形式参数就像函数内的其他局部变量，在进入函数时被创建，退出函数时被销毁。\n当调用函数时，有三种向函数传递参数的方式：\n\n\n\n调用类型\n描述\n\n\n\n传值调用\n该方法把参数的实际值赋值给函数的形式参数。在这种情况下，修改函数内的形式参数对实际参数没有影响。\n\n\n指针调用\n该方法把参数的地址赋值给形式参数。在函数内，该地址用于访问调用中要用到的实际参数。这意味着，修改形式参数会影响实际参数。\n\n\n引用调用\n该方法把参数的引用赋值给形式参数。在函数内，该引用用于访问调用中要用到的实际参数。这意味着，修改形式参数会影响实际参数。\n\n\nC++ 引用调用12345678910// 函数定义void swap(int &amp;x, int &amp;y)&#123;   int temp;   temp = x; /* 保存地址 x 的值 */   x = y;    /* 把 y 赋值给 x */   y = temp; /* 把 x 赋值给 y  */     return;&#125;\n\nC++ 指针调用12345678910// 函数定义void swap(int *x, int *y)&#123;   int temp;   temp = *x;    /* 保存地址 x 的值 */   *x = *y;        /* 把 y 赋值给 x */   *y = temp;    /* 把 x 赋值给 y */     return;&#125;\n\n参数的默认值1234567891011#include &lt;iostream&gt;using namespace std; int sum(int a, int b=20)&#123;  int result;   result = a + b;    return (result);&#125;\n\nLambda 函数与表达式","dateCreated":"2020-05-11T02:16:54+08:00","dateModified":"2020-09-17T17:35:28+08:00","datePublished":"2020-05-11T02:16:54+08:00","description":"Study notes of C++","headline":"C++ Notes","image":["https://www.runoob.com/wp-content/uploads/2015/01/cpp-mini-logo.png","https://www.cdn.geeksforgeeks.org/wp-content/uploads/titleShadow.png"],"mainEntityOfPage":{"@type":"WebPage","@id":"https://joddiy.cc/2020/05/11/C-Plus-Plus/"},"publisher":{"@type":"Organization","name":"Joddiy Zhang","sameAs":["https://github.com/joddiy","https://scholar.google.com/citations?user=KH-xv38AAAAJ&hl=en&oi=sra","https://www.linkedin.com/in/joddiyzhang/"],"image":"14108933.jpeg","logo":{"@type":"ImageObject","url":"14108933.jpeg"}},"url":"https://joddiy.cc/2020/05/11/C-Plus-Plus/","keywords":"Program language, C++","thumbnailUrl":"https://www.runoob.com/wp-content/uploads/2015/01/cpp-mini-logo.png"}</script>
+    <script type="application/ld+json">{"@context":"http://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"Joddiy Zhang","sameAs":["https://github.com/joddiy","https://scholar.google.com/citations?user=KH-xv38AAAAJ&hl=en&oi=sra","https://www.linkedin.com/in/joddiyzhang/"],"image":"14108933.jpeg"},"articleBody":"C++ 数据类型基本的内置类型bool char int float double void wchar_t\n枚举类型123enum color &#123; red, green, blue &#125; c; // red = 0, green = 1enum color &#123; red, green=5, blue &#125;; // blue = 6\n\n\nC++ 变量类型C++ 中的变量声明当您使用多个文件且只在其中一个文件中定义变量时（定义变量的文件在程序连接时是可用的），变量声明就显得非常有用。您可以使用 extern 关键字在任何地方声明一个变量。\n123456789101112131415161718192021222324252627#include &lt;iostream&gt;using namespace std; // 变量声明extern int a, b;extern int c;extern float f;  int main ()&#123;  // 变量定义  int a, b;  int c;  float f;   // 实际初始化  a = 10;  b = 20;  c = a + b;   cout &lt;&lt; c &lt;&lt; endl ;   f = 70.0/3.0;  cout &lt;&lt; f &lt;&lt; endl ;   return 0;&#125;\n\n同样的，在函数声明时，提供一个函数名，而函数的实际定义则可以在任何地方进行。例如：\n1234567891011121314// 函数声明int func(); int main()&#123;    // 函数调用    int i = func();&#125; // 函数定义int func()&#123;    return 0;&#125;\n\n\nC++ 常量整数常量前缀指定基数：0x 或 0X 表示十六进制，0 表示八进制，不带前缀则默认表示十进制。\n浮点常量当使用小数形式表示时，必须包含整数部分、小数部分，或同时包含两者。当使用指数形式表示时， 必须包含小数点、指数，或同时包含两者。带符号的指数是用 e 或 E 引入的。\n123.14159       // 合法的 314159E-5L    // 合法的 \n\n\nC++ 存储类下面列出 C++ 程序中可用的存储类：\n\nauto\nregister\nstatic\nextern\nmutable\nthread_local (C++11)\n\nauto 存储类自 C++ 11 以来，auto 关键字用于两种情况：声明变量时根据初始化表达式自动推断该变量的类型、声明函数时函数返回值的占位符。\n1234auto f=3.14;      //doubleauto s(&quot;hello&quot;);  //const char*auto z = new auto(9); // int*auto x1 = 5, x2 = 5.0, x3=&#x27;r&#x27;;//错误，必须是初始化为同一类型\n\nregister 存储类register 存储类用于定义存储在寄存器中而不是 RAM 中的局部变量。这意味着变量的最大尺寸等于寄存器的大小（通常是一个词），且不能对它应用一元的 ‘&amp;’ 运算符（因为它没有内存位置）。\n定义 ‘register’ 并不意味着变量将被存储在寄存器中，它意味着变量可能存储在寄存器中，这取决于硬件和实现的限制。\nstatic 存储类static 存储类指示编译器在程序的生命周期内保持局部变量的存在，而不需要在每次它进入和离开作用域时进行创建和销毁。因此，使用 static 修饰局部变量可以在函数调用之间保持局部变量的值。\nstatic 修饰符也可以应用于全局变量。当 static 修饰全局变量时，会使变量的作用域限制在声明它的文件内。\n在 C++ 中，当 static 用在类数据成员上时，会导致仅有一个该成员的副本被类的所有对象共享。\nextern 存储类mutable 存储类thread_local 存储类使用 thread_local 说明符声明的变量仅可在它在其上创建的线程上访问。 变量在创建线程时创建，并在销毁线程时销毁。 每个线程都有其自己的变量副本。\n可以将 thread_local 仅应用于数据声明和定义，thread_local 不能用于函数声明或定义。\n\nC++ 运算符运算符是一种告诉编译器执行特定的数学或逻辑操作的符号。C++ 内置了丰富的运算符，并提供了以下类型的运算符：\n\n算术运算符\n关系运算符\n逻辑运算符\n位运算符\n赋值运算符\n杂项运算符\n\n杂项运算符下表列出了 C++ 支持的其他一些重要的运算符。\n\n\n\n运算符\n描述\n\n\n\nsizeof\nsizeof 运算符返回变量的大小。例如，sizeof(a) 将返回 4，其中 a 是整数。\n\n\nCondition ? X : Y\n条件运算符。如果 Condition 为真 ? 则值为 X : 否则值为 Y。\n\n\n,\n逗号运算符会顺序执行一系列运算。整个逗号表达式的值是以逗号分隔的列表中的最后一个表达式的值。\n\n\n.（点）和 -&gt;（箭头）\n成员运算符用于引用类、结构和共用体的成员。\n\n\nCast\n强制转换运算符把一种数据类型转换为另一种数据类型。例如，int(2.2000) 将返回 2。\n\n\n&amp;\n指针运算符 &amp; 返回变量的地址。例如 &a; 将给出变量的实际地址。\n\n\n*\n指针运算符 * 指向一个变量。例如，*var; 将指向变量 var。\n\n\nC++ 中的运算符优先级\n\n\n类别\n运算符\n结合性\n\n\n\n后缀\n() [] -&gt; . ++ - -\n从左到右\n\n\n一元\n+ - ! ~ ++ - - (type)* &amp; sizeof\n从右到左\n\n\n乘除\n* &#x2F; %\n从左到右\n\n\n加减\n+ -\n从左到右\n\n\n移位\n&lt;&lt; &gt;&gt;\n从左到右\n\n\n关系\n&lt; &lt;&#x3D; &gt; &gt;&#x3D;\n从左到右\n\n\n相等\n&#x3D;&#x3D; !&#x3D;\n从左到右\n\n\n位与 AND\n&amp;\n从左到右\n\n\n位异或 XOR\n^\n从左到右\n\n\n位或 OR\n\n\n\n\n逻辑与 AND\n&amp;&amp;\n从左到右\n\n\n逻辑或 OR\n\n\n\n\n条件\n?:\n从右到左\n\n\n赋值\n&#x3D; +&#x3D; -&#x3D; *&#x3D; &#x2F;&#x3D; %&#x3D;&gt;&gt;&#x3D; &lt;&lt;&#x3D; &amp;&#x3D; ^&#x3D;\n&#x3D;\n\n\n逗号\n,\n从左到右\n\n\n\nC++ 函数函数参数如果函数要使用参数，则必须声明接受参数值的变量。这些变量称为函数的形式参数。\n形式参数就像函数内的其他局部变量，在进入函数时被创建，退出函数时被销毁。\n当调用函数时，有三种向函数传递参数的方式：\n\n\n\n调用类型\n描述\n\n\n\n传值调用\n该方法把参数的实际值赋值给函数的形式参数。在这种情况下，修改函数内的形式参数对实际参数没有影响。\n\n\n指针调用\n该方法把参数的地址赋值给形式参数。在函数内，该地址用于访问调用中要用到的实际参数。这意味着，修改形式参数会影响实际参数。\n\n\n引用调用\n该方法把参数的引用赋值给形式参数。在函数内，该引用用于访问调用中要用到的实际参数。这意味着，修改形式参数会影响实际参数。\n\n\nC++ 引用调用12345678910// 函数定义void swap(int &amp;x, int &amp;y)&#123;   int temp;   temp = x; /* 保存地址 x 的值 */   x = y;    /* 把 y 赋值给 x */   y = temp; /* 把 x 赋值给 y  */     return;&#125;\n\nC++ 指针调用12345678910// 函数定义void swap(int *x, int *y)&#123;   int temp;   temp = *x;    /* 保存地址 x 的值 */   *x = *y;        /* 把 y 赋值给 x */   *y = temp;    /* 把 x 赋值给 y */     return;&#125;\n\n参数的默认值1234567891011#include &lt;iostream&gt;using namespace std; int sum(int a, int b=20)&#123;  int result;   result = a + b;    return (result);&#125;\n\nLambda 函数与表达式","dateCreated":"2020-05-11T02:16:54+08:00","dateModified":"2020-09-17T17:35:28+08:00","datePublished":"2020-05-11T02:16:54+08:00","description":"Study notes of C++","headline":"C++ Notes","image":["https://www.runoob.com/wp-content/uploads/2015/01/cpp-mini-logo.png","https://www.cdn.geeksforgeeks.org/wp-content/uploads/titleShadow.png"],"mainEntityOfPage":{"@type":"WebPage","@id":"https://joddiy.github.io/2020/05/11/C-Plus-Plus/"},"publisher":{"@type":"Organization","name":"Joddiy Zhang","sameAs":["https://github.com/joddiy","https://scholar.google.com/citations?user=KH-xv38AAAAJ&hl=en&oi=sra","https://www.linkedin.com/in/joddiyzhang/"],"image":"14108933.jpeg","logo":{"@type":"ImageObject","url":"14108933.jpeg"}},"url":"https://joddiy.github.io/2020/05/11/C-Plus-Plus/","keywords":"Program language, C++","thumbnailUrl":"https://www.runoob.com/wp-content/uploads/2015/01/cpp-mini-logo.png"}</script>
     <meta name="description" content="Study notes of C++">
 <meta property="og:type" content="blog">
 <meta property="og:title" content="C++ Notes">
-<meta property="og:url" content="https://joddiy.cc/2020/05/11/C-Plus-Plus/index.html">
+<meta property="og:url" content="https://joddiy.github.io/2020/05/11/C-Plus-Plus/index.html">
 <meta property="og:site_name" content="Jz Blog">
 <meta property="og:description" content="Study notes of C++">
 <meta property="og:locale" content="en_US">
@@ -32,7 +32,7 @@
         
     
     
-        <meta property="og:image" content="https://joddiy.cc/assets/images/14108933.jpeg"/>
+        <meta property="og:image" content="https://joddiy.github.io/assets/images/14108933.jpeg"/>
     
     
         <meta property="og:image" content="https://www.runoob.com/wp-content/uploads/2015/01/cpp-mini-logo.png"/>
@@ -558,7 +558,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.cc/2020/05/11/C-Plus-Plus/"
+                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.github.io/2020/05/11/C-Plus-Plus/"
                     title="Share on Facebook"
                     aria-label="Share on Facebook"
                 >
@@ -571,7 +571,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://twitter.com/intent/tweet?text=https://joddiy.cc/2020/05/11/C-Plus-Plus/"
+                    target="new" href="https://twitter.com/intent/tweet?text=https://joddiy.github.io/2020/05/11/C-Plus-Plus/"
                     title="Share on Twitter"
                     aria-label="Share on Twitter"
                 >
@@ -584,7 +584,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://plus.google.com/share?url=https://joddiy.cc/2020/05/11/C-Plus-Plus/"
+                    target="new" href="https://plus.google.com/share?url=https://joddiy.github.io/2020/05/11/C-Plus-Plus/"
                     title="Share on Google+"
                     aria-label="Share on Google+"
                 >
@@ -686,7 +686,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.cc/2020/05/11/C-Plus-Plus/"
+                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.github.io/2020/05/11/C-Plus-Plus/"
                     title="Share on Facebook"
                     aria-label="Share on Facebook"
                 >
@@ -699,7 +699,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://twitter.com/intent/tweet?text=https://joddiy.cc/2020/05/11/C-Plus-Plus/"
+                    target="new" href="https://twitter.com/intent/tweet?text=https://joddiy.github.io/2020/05/11/C-Plus-Plus/"
                     title="Share on Twitter"
                     aria-label="Share on Twitter"
                 >
@@ -712,7 +712,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://plus.google.com/share?url=https://joddiy.cc/2020/05/11/C-Plus-Plus/"
+                    target="new" href="https://plus.google.com/share?url=https://joddiy.github.io/2020/05/11/C-Plus-Plus/"
                     title="Share on Google+"
                     aria-label="Share on Google+"
                 >
@@ -756,7 +756,7 @@
                     <a
                         class="share-option-btn"
                         target="new"
-                        href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.cc/2020/05/11/C-Plus-Plus/"
+                        href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.github.io/2020/05/11/C-Plus-Plus/"
                         aria-label="Share on Facebook"
                     >
                         <i class="fab fa-facebook" aria-hidden="true"></i><span>Share on Facebook</span>
@@ -769,7 +769,7 @@
                     <a
                         class="share-option-btn"
                         target="new"
-                        href="https://twitter.com/intent/tweet?text=https://joddiy.cc/2020/05/11/C-Plus-Plus/"
+                        href="https://twitter.com/intent/tweet?text=https://joddiy.github.io/2020/05/11/C-Plus-Plus/"
                         aria-label="Share on Twitter"
                     >
                         <i class="fab fa-twitter" aria-hidden="true"></i><span>Share on Twitter</span>
@@ -782,7 +782,7 @@
                     <a
                         class="share-option-btn"
                         target="new"
-                        href="https://plus.google.com/share?url=https://joddiy.cc/2020/05/11/C-Plus-Plus/"
+                        href="https://plus.google.com/share?url=https://joddiy.github.io/2020/05/11/C-Plus-Plus/"
                         aria-label="Share on Google+"
                     >
                         <i class="fab fa-google-plus" aria-hidden="true"></i><span>Share on Google+</span>

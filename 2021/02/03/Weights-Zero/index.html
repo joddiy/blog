@@ -10,18 +10,18 @@
     <meta name="author" content="Joddiy Zhang">
     
     
-        <link rel="icon" href="https://joddiy.cc/assets/images/favicon.ico">
+        <link rel="icon" href="https://joddiy.github.io/assets/images/favicon.ico">
     
     
-    <script type="application/ld+json">{"@context":"http://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"Joddiy Zhang","sameAs":["https://github.com/joddiy","https://scholar.google.com/citations?user=KH-xv38AAAAJ&hl=en&oi=sra","https://www.linkedin.com/in/joddiyzhang/"],"image":"14108933.jpeg"},"articleBody":"EquationForward:\n1234e = embed(x)f = fc(e) # w * x + br = relu(f)l = mse(r, y)\n\nBackward:\n123456dr = dl * 2 * (r-y)df = 1 if f &gt;= 0 else 0 # 0.01 for leakyreludw = df * xdb = dfdx = df * wde # lookup from dx\n\nExperiment 1.Experiment setting\nembed weights as zero\nfc weights as uniform random by default\nfc bias as uniform random by default\nuse relu\n\nIntermediate valuesForward:\n1234e = embed(x) = 0f = fc(e) != 0 # w * e + br = relu(f) != 0l = mse(r, y) != 0\n\nBackward:\n123456dr = dl * 2 * (r-y) != 0df = 1 if f &gt; 0 else 0 != 0dw = df * e = 0db = df != 0dx = df * w != 0de # lookup from dx\n\nResultThe de of embed updates, db of fc updates, but dw of fc does not update.\nBut because this iteration update the de, so at the next iteration, the e will have value, so that dw = df * e will have value, and fc will update as normal.\nThe weights of embedding updates as normal. Because the bias in Pytorch are sampled from uniform distribution by default(as the following figure). Even though the w * e is zero, the f = w * e + b still has values, then df and dx = df * w has value, then the de can update.\n\nExperiment 2.Experiment setting\nembed weights as zero\nfc weights as uniform random by default\nfc no bias or bias as zero \nuse relu\n\nIntermediate valuesForward:\n1234e = embed(x) = 0f = fc(e) = 0 # w * er = relu(f) = 0l = mse(r, y) != 0\n\nBackward:\n12345dr = dl * 2 * (r-y) != 0df = 1 if f &gt; 0 else 0 = 0dw = df * e = 0dx = df * w = 0de # lookup from dx\nThe de and dw both do not update.\nBecause f = w * e = 0, then df is zero, dw and de are zero then.\nBut if the gradient of relu change to:\n11 if f &gt;= 0 else 0 = 0\nrather than:\n11 if f &gt; 0 else 0 = 0 # relu in pytorch\n\nThe df will be 1, and de can update then.\nExperiment 3.Experiment setting\nembed weights as zero\nfc weights as uniform random by default\nfc no bias or bias as zero \nuse leakyrelu\n\nIntermediate valuesForward:\n1234e = embed(x) = 0f = fc(e) = 0 # w * er = leaky_relu(f) = 0l = mse(r, y) != 0\n\nBackward:\n12345dr = dl * 2 * (r-y) != 0df = 1 if f &gt; 0 else 0.01 != 0dw = df * e = 0dx = df * w != 0de # lookup from dx\nThe de, but dw does not update.\nJust like mentioned above, the df will be 0.01, and de can update then.\nExperiment 4.Experiment setting\nembed weights as zero\nfc weights as zero\nfc no bias or bias as zero \nuse leakyrelu\n\nIntermediate valuesForward:\n1234e = embed(x) = 0f = fc(e) = 0 # w * er = leaky_relu(f) = 0l = mse(r, y) != 0\n\nBackward:\n12345dr = dl * 2 * (r-y) != 0df = 1 if f &gt; 0 else 0.01 != 0dw = df * e = 0dx = df * w = 0de # lookup from dx\nThe de and dw both do not update.\nBecause e and w are zero, so dw = df * w and dx = df * e are zero.\nExperiment 5.Experiment setting\nembed weights as ones\nfc weights as ones\nfc no bias or bias as zero \nuse leakyrelu\n\nIntermediate valuesForward:\n1234e = embed(x) = 1f = fc(e) = 1 # w * er = leaky_relu(f) = 1l = mse(r, y) != 0\n\nBackward:\n12345dr = dl * 2 * (r-y) != 0df = 1 if f &gt; 0 else 0.01 != 0dw = df * e != 0dx = df * w != 0de # lookup from dx\nAll cells in the de and dw update with the same direction.\nBecause e and w are same, and df cames from a single loss value.\nSo, in this case, no matter how many the weights there are, it can only be regarded as a single weight.\nSummaryFrom the  equation, we know:\n12345678910# forwarde = embed(x) = 0f = fc(e) = 0 # w * e...# backward...dw = df * edx = df * wde # lookup from dx\nThe weight of full-connection dw is affected by the output of embedding e, and the weight of embedding of de(or dx) is affected by the weights of full-connection w.\nBoth of them are affected by gradient from the next layers df.\nSo, even if we set the weights of embedding as zeros, since its gradient is calculated from the dx = df * w and de lookuped from dx, only if we keep df * w from the next layer have values, the de(from dx) will update as normal. So please be careful about the w and graident vanish issue of the df from the next layer.\nCodeDownload\n","dateCreated":"2021-02-03T22:06:19+08:00","dateModified":"2021-02-04T10:17:05+08:00","datePublished":"2021-02-03T22:06:19+08:00","description":"Doc for Weights Zero","headline":"Weights Zero","image":["https://img.icons8.com/ios/452/source-code.png","https://specials-images.forbesimg.com/imageserve/5f302109ffad89f9130e07db/960x0.jpg?cropX1=0&cropX2=4800&cropY1=243&cropY2=2943"],"mainEntityOfPage":{"@type":"WebPage","@id":"https://joddiy.cc/2021/02/03/Weights-Zero/"},"publisher":{"@type":"Organization","name":"Joddiy Zhang","sameAs":["https://github.com/joddiy","https://scholar.google.com/citations?user=KH-xv38AAAAJ&hl=en&oi=sra","https://www.linkedin.com/in/joddiyzhang/"],"image":"14108933.jpeg","logo":{"@type":"ImageObject","url":"14108933.jpeg"}},"url":"https://joddiy.cc/2021/02/03/Weights-Zero/","keywords":"Deep Learning, Study, Pytorch","thumbnailUrl":"https://img.icons8.com/ios/452/source-code.png"}</script>
+    <script type="application/ld+json">{"@context":"http://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"Joddiy Zhang","sameAs":["https://github.com/joddiy","https://scholar.google.com/citations?user=KH-xv38AAAAJ&hl=en&oi=sra","https://www.linkedin.com/in/joddiyzhang/"],"image":"14108933.jpeg"},"articleBody":"EquationForward:\n1234e = embed(x)f = fc(e) # w * x + br = relu(f)l = mse(r, y)\n\nBackward:\n123456dr = dl * 2 * (r-y)df = 1 if f &gt;= 0 else 0 # 0.01 for leakyreludw = df * xdb = dfdx = df * wde # lookup from dx\n\nExperiment 1.Experiment setting\nembed weights as zero\nfc weights as uniform random by default\nfc bias as uniform random by default\nuse relu\n\nIntermediate valuesForward:\n1234e = embed(x) = 0f = fc(e) != 0 # w * e + br = relu(f) != 0l = mse(r, y) != 0\n\nBackward:\n123456dr = dl * 2 * (r-y) != 0df = 1 if f &gt; 0 else 0 != 0dw = df * e = 0db = df != 0dx = df * w != 0de # lookup from dx\n\nResultThe de of embed updates, db of fc updates, but dw of fc does not update.\nBut because this iteration update the de, so at the next iteration, the e will have value, so that dw = df * e will have value, and fc will update as normal.\nThe weights of embedding updates as normal. Because the bias in Pytorch are sampled from uniform distribution by default(as the following figure). Even though the w * e is zero, the f = w * e + b still has values, then df and dx = df * w has value, then the de can update.\n\nExperiment 2.Experiment setting\nembed weights as zero\nfc weights as uniform random by default\nfc no bias or bias as zero \nuse relu\n\nIntermediate valuesForward:\n1234e = embed(x) = 0f = fc(e) = 0 # w * er = relu(f) = 0l = mse(r, y) != 0\n\nBackward:\n12345dr = dl * 2 * (r-y) != 0df = 1 if f &gt; 0 else 0 = 0dw = df * e = 0dx = df * w = 0de # lookup from dx\nThe de and dw both do not update.\nBecause f = w * e = 0, then df is zero, dw and de are zero then.\nBut if the gradient of relu change to:\n11 if f &gt;= 0 else 0 = 0\nrather than:\n11 if f &gt; 0 else 0 = 0 # relu in pytorch\n\nThe df will be 1, and de can update then.\nExperiment 3.Experiment setting\nembed weights as zero\nfc weights as uniform random by default\nfc no bias or bias as zero \nuse leakyrelu\n\nIntermediate valuesForward:\n1234e = embed(x) = 0f = fc(e) = 0 # w * er = leaky_relu(f) = 0l = mse(r, y) != 0\n\nBackward:\n12345dr = dl * 2 * (r-y) != 0df = 1 if f &gt; 0 else 0.01 != 0dw = df * e = 0dx = df * w != 0de # lookup from dx\nThe de, but dw does not update.\nJust like mentioned above, the df will be 0.01, and de can update then.\nExperiment 4.Experiment setting\nembed weights as zero\nfc weights as zero\nfc no bias or bias as zero \nuse leakyrelu\n\nIntermediate valuesForward:\n1234e = embed(x) = 0f = fc(e) = 0 # w * er = leaky_relu(f) = 0l = mse(r, y) != 0\n\nBackward:\n12345dr = dl * 2 * (r-y) != 0df = 1 if f &gt; 0 else 0.01 != 0dw = df * e = 0dx = df * w = 0de # lookup from dx\nThe de and dw both do not update.\nBecause e and w are zero, so dw = df * w and dx = df * e are zero.\nExperiment 5.Experiment setting\nembed weights as ones\nfc weights as ones\nfc no bias or bias as zero \nuse leakyrelu\n\nIntermediate valuesForward:\n1234e = embed(x) = 1f = fc(e) = 1 # w * er = leaky_relu(f) = 1l = mse(r, y) != 0\n\nBackward:\n12345dr = dl * 2 * (r-y) != 0df = 1 if f &gt; 0 else 0.01 != 0dw = df * e != 0dx = df * w != 0de # lookup from dx\nAll cells in the de and dw update with the same direction.\nBecause e and w are same, and df cames from a single loss value.\nSo, in this case, no matter how many the weights there are, it can only be regarded as a single weight.\nSummaryFrom the  equation, we know:\n12345678910# forwarde = embed(x) = 0f = fc(e) = 0 # w * e...# backward...dw = df * edx = df * wde # lookup from dx\nThe weight of full-connection dw is affected by the output of embedding e, and the weight of embedding of de(or dx) is affected by the weights of full-connection w.\nBoth of them are affected by gradient from the next layers df.\nSo, even if we set the weights of embedding as zeros, since its gradient is calculated from the dx = df * w and de lookuped from dx, only if we keep df * w from the next layer have values, the de(from dx) will update as normal. So please be careful about the w and graident vanish issue of the df from the next layer.\nCodeDownload\n","dateCreated":"2021-02-03T22:06:19+08:00","dateModified":"2021-02-04T10:17:05+08:00","datePublished":"2021-02-03T22:06:19+08:00","description":"Doc for Weights Zero","headline":"Weights Zero","image":["https://img.icons8.com/ios/452/source-code.png","https://specials-images.forbesimg.com/imageserve/5f302109ffad89f9130e07db/960x0.jpg?cropX1=0&cropX2=4800&cropY1=243&cropY2=2943"],"mainEntityOfPage":{"@type":"WebPage","@id":"https://joddiy.github.io/2021/02/03/Weights-Zero/"},"publisher":{"@type":"Organization","name":"Joddiy Zhang","sameAs":["https://github.com/joddiy","https://scholar.google.com/citations?user=KH-xv38AAAAJ&hl=en&oi=sra","https://www.linkedin.com/in/joddiyzhang/"],"image":"14108933.jpeg","logo":{"@type":"ImageObject","url":"14108933.jpeg"}},"url":"https://joddiy.github.io/2021/02/03/Weights-Zero/","keywords":"Deep Learning, Study, Pytorch","thumbnailUrl":"https://img.icons8.com/ios/452/source-code.png"}</script>
     <meta name="description" content="Doc for Weights Zero">
 <meta property="og:type" content="blog">
 <meta property="og:title" content="Weights Zero">
-<meta property="og:url" content="https://joddiy.cc/2021/02/03/Weights-Zero/index.html">
+<meta property="og:url" content="https://joddiy.github.io/2021/02/03/Weights-Zero/index.html">
 <meta property="og:site_name" content="Jz Blog">
 <meta property="og:description" content="Doc for Weights Zero">
 <meta property="og:locale" content="en_US">
-<meta property="og:image" content="https://joddiy.cc/1.png">
+<meta property="og:image" content="https://joddiy.github.io/1.png">
 <meta property="article:published_time" content="2021-02-03T14:06:19.000Z">
 <meta property="article:modified_time" content="2021-02-04T02:17:05.000Z">
 <meta property="article:author" content="Joddiy Zhang">
@@ -29,13 +29,13 @@
 <meta property="article:tag" content="Study">
 <meta property="article:tag" content="Pytorch">
 <meta name="twitter:card" content="summary">
-<meta name="twitter:image" content="https://joddiy.cc/1.png">
+<meta name="twitter:image" content="https://joddiy.github.io/1.png">
     
     
         
     
     
-        <meta property="og:image" content="https://joddiy.cc/assets/images/14108933.jpeg"/>
+        <meta property="og:image" content="https://joddiy.github.io/assets/images/14108933.jpeg"/>
     
     
         <meta property="og:image" content="https://img.icons8.com/ios/452/source-code.png"/>
@@ -452,7 +452,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.cc/2021/02/03/Weights-Zero/"
+                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.github.io/2021/02/03/Weights-Zero/"
                     title="Share on Facebook"
                     aria-label="Share on Facebook"
                 >
@@ -465,7 +465,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://twitter.com/intent/tweet?text=https://joddiy.cc/2021/02/03/Weights-Zero/"
+                    target="new" href="https://twitter.com/intent/tweet?text=https://joddiy.github.io/2021/02/03/Weights-Zero/"
                     title="Share on Twitter"
                     aria-label="Share on Twitter"
                 >
@@ -478,7 +478,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://plus.google.com/share?url=https://joddiy.cc/2021/02/03/Weights-Zero/"
+                    target="new" href="https://plus.google.com/share?url=https://joddiy.github.io/2021/02/03/Weights-Zero/"
                     title="Share on Google+"
                     aria-label="Share on Google+"
                 >
@@ -580,7 +580,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.cc/2021/02/03/Weights-Zero/"
+                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.github.io/2021/02/03/Weights-Zero/"
                     title="Share on Facebook"
                     aria-label="Share on Facebook"
                 >
@@ -593,7 +593,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://twitter.com/intent/tweet?text=https://joddiy.cc/2021/02/03/Weights-Zero/"
+                    target="new" href="https://twitter.com/intent/tweet?text=https://joddiy.github.io/2021/02/03/Weights-Zero/"
                     title="Share on Twitter"
                     aria-label="Share on Twitter"
                 >
@@ -606,7 +606,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://plus.google.com/share?url=https://joddiy.cc/2021/02/03/Weights-Zero/"
+                    target="new" href="https://plus.google.com/share?url=https://joddiy.github.io/2021/02/03/Weights-Zero/"
                     title="Share on Google+"
                     aria-label="Share on Google+"
                 >
@@ -650,7 +650,7 @@
                     <a
                         class="share-option-btn"
                         target="new"
-                        href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.cc/2021/02/03/Weights-Zero/"
+                        href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.github.io/2021/02/03/Weights-Zero/"
                         aria-label="Share on Facebook"
                     >
                         <i class="fab fa-facebook" aria-hidden="true"></i><span>Share on Facebook</span>
@@ -663,7 +663,7 @@
                     <a
                         class="share-option-btn"
                         target="new"
-                        href="https://twitter.com/intent/tweet?text=https://joddiy.cc/2021/02/03/Weights-Zero/"
+                        href="https://twitter.com/intent/tweet?text=https://joddiy.github.io/2021/02/03/Weights-Zero/"
                         aria-label="Share on Twitter"
                     >
                         <i class="fab fa-twitter" aria-hidden="true"></i><span>Share on Twitter</span>
@@ -676,7 +676,7 @@
                     <a
                         class="share-option-btn"
                         target="new"
-                        href="https://plus.google.com/share?url=https://joddiy.cc/2021/02/03/Weights-Zero/"
+                        href="https://plus.google.com/share?url=https://joddiy.github.io/2021/02/03/Weights-Zero/"
                         aria-label="Share on Google+"
                     >
                         <i class="fab fa-google-plus" aria-hidden="true"></i><span>Share on Google+</span>

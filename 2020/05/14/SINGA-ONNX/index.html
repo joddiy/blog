@@ -10,14 +10,14 @@
     <meta name="author" content="Joddiy Zhang">
     
     
-        <link rel="icon" href="https://joddiy.github.io/assets/images/favicon.ico">
+        <link rel="icon" href="http://joddiy.cc/assets/images/favicon.ico">
     
     
-    <script type="application/ld+json">{"@context":"http://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"Joddiy Zhang","sameAs":["https://github.com/joddiy","https://scholar.google.com/citations?user=KH-xv38AAAAJ&hl=en&oi=sra","https://www.linkedin.com/in/joddiyzhang/"],"image":"14108933.jpeg"},"articleBody":"Conslusion firstGood news: \n\nThe ONNX can defines the loss and optimizer now within its format. However, current loss only have NegativeLogLikelihoodLoss and SoftmaxCrossEntropyLoss. Also, it only can store optimizers, only have Adagrad, Adam, Momentum(SGD with standard momentum). \n\nBad news:\n\nwe need to update the onnx to 1.7, which is released last week, may not be so stable. In this release, ONNX defines a comlicated node called GraphCall to specify which gradients should be computed and how to update the tensors by using these gradients. Since we will update the weights following the backward, so this part may not be useful for us.\n\nONNX Training Preview (TrainingInfoProto)In last week, the ONNX team has released a new version 1.7.0 which upgrade its opset version to 12. In this new rleases, they add a new feature called TrainingInfoProto. \nThis new feature defines something about training information. There are two main parts in it, initialization-step and training-algorithm-step.\ninitialization-stepinitialization-step means the developer can defines a initialization. For its type, the initialization is a formal ONNX graph. It doesn’t have input but seveal outputs. The developer can defines some nodes in this graph, such as RandomNormal or RandomUniform, and in another field called initialization_binding, the developer can assign these outputs to the specific tensors in the inference graph.\nThe current supported ramdom methods are: RandomNormal or RandomUniform.\ntraining-algorithm-steptraining-algorithm-step defines a field called algorithm. It defines a inference graph which represents a training algorithm’s step. Given required inputs, it computes outputs to update tensors in its own or in the main computaton graph. update_binding contains a key-value pair of strings to assign the outputs to some specific tensors.\nIn general, this graph contains loss node, gradient node, optimizer node, increment of iteration count, and some calls to the inference graph. The field algorithm.node is the only place the user can use GraphCall operator. \nLoss node\nNegativeLogLikelihoodLoss\nSoftmaxCrossEntropyLoss\n\nOptimizer node\nAdagrad\nAdam\nMomentum: SG with standard momentum\n\nGradient nodeThe gradient node actually only defines the necessary information to compute the gradient for all graph, for example, at the following graph, the gradient defines its inputs containing the xs(intermidate weights) and zs(input of the graph), and y(the output of the graph), and its outputs having dY/dW, dY/dZ whose order corresponds to the inputs in xs. \nIt doesn’t defines any logic about how to compute the dY/dW, dY/dZ.\n1234567891011121314W --&gt; Conv --&gt; H --&gt; Gemm --&gt; Y|      ^              ^|      |              ||      X              Z|      |              ||      |   .----------&#x27;|      |   |  (W/Z/X is the 1st/2nd/3rd input of Gradient as shown in|      |   |   &quot;xs&quot; followed by &quot;zs&quot;)|      v   v&#x27;---&gt; Gradient(xs=[&quot;W&quot;, &quot;Z&quot;], zs=[&quot;X&quot;], y=&quot;Y&quot;)       |   |       |   &#x27;-----------------------------------&gt; dY/dW (1st output of Gradient)       |       &#x27;---------------------------------------&gt; dY/dZ (2nd output of Gradient)\n\nGraphCall nodeThe GraphCall operator invokes a graph inside TrainingInfoProto’s algorithm field. The GraphCall inputs and outputs are bound to those of invoked graph by position.\nBased on the above inference graph, the GraphCall can use like this:\n123456789101112131415161718192021222324252627282930.-------- W (a global and mutable variable from|         |  the inference graph)|         ||   .-----&#x27;-----------.|   |                 ||   |                 v|   | .-- X_1 --&gt; GraphCall(graph_name=&quot;MyInferenceGraph&quot;)|   | |            |  ||   | |            |  ||   | |   Z_1 -----&#x27;  ||   | |    |          V|   | |    |         Y_1 ---&gt; Loss ---&gt; O|   | |    |                    ^|   | |    |                    ||   | `--. |                    C|   |    | |                    ||   |    | |   .----------------&#x27;|   |    | |   ||   |    v v   v|   `--&gt; Gradient(xs=[&quot;W&quot;], zs=[&quot;X_1&quot;, &quot;Z_1&quot;, &quot;C&quot;], y=&quot;O&quot;)|        ||        v|      dO_dW (gradient of W)      1 (a scalar one)|        |                        ||        V                        v|       Div &lt;--- T ------------&gt; Add ---&gt; T_new|        |    (T is the number of training iterations.|        |     T is also globally visible and mutable.)|        v`-----&gt; Sub ----&gt; W_new\n\nThe previous section’s inference graph is called by GraphCall(graph_name=&quot;MyInferenceGraph&quot;), and it uses a new batch of inputs (X_1, Z_1) to compute Y_1. \nGradient defines the graidents the graph should compute, finally, it gets W_new amd T_new.\nThe it uses the following update_binding to udpate the tensors:\n1update_binding: &#123;&quot;W&quot;: &quot;W_new&quot;, &quot;T&quot;: &quot;T_new&quot;&#125;\n\nAPI12345678910111213141516171819202122232425262728293031323334353637383940414243# handle ONNX def to_onnx(model):    return a onnx model class SONNXModel(Module):\tdef __init__(self, onnx_model):\t\tsinga_rep = sonnx.prepare(onnx_model, device=dev, batchsize=1)\t\tfor layer_name, layer in singa_rep.layers:\t\t\tself.__dict__[layer_name] = layer\t\t# store weights here as numpy\t\tfor weith_name, weight in singa_rep.weights:\t\t\tself.weights[weith_name] = weight\t\t# store layer info such as input and output name(only weights)\t\tfor layer_name, layer_info in singa_rep.layer_infos:\t\t\tself.layer_infos[layer_name] = layer_info    def forward(self, aux_output):        # run forward according to onnx graph         return the last output + aux_output    def compile(self)    \t# init weights    \tsuper.compile(self)    \t# set weights&#x27; value\t\tfor layer_name, layer in self.__dict__:\t\t\tinput_info, output_info = self.layer_infos[layer_name]\t\t\tfor input_name in input_info:\t\t\t\tlayer.set_weight(self.weights[input_name])class MyModel(SONNXModel):     def __init__(self, onnx):          super.__init__(onnx)          self.layer1 = Conv()          self.layer2 = Conv()     def forward(self, x):           x1, x2 = super.forward(x, aux_output)           x = self.layer1.forward(x2)           return self.layer2.forward(x1) + x      def train_one_batch(self, x, y):           y_ = self.forward(x)           ....\n\n\nsave and load: how to load onnx model, and how to save loss and sgd\n","dateCreated":"2020-05-14T16:54:44+08:00","dateModified":"2020-09-22T17:44:18+08:00","datePublished":"2020-05-14T16:54:44+08:00","description":"some upgrade about SINGA ONNX","headline":"SINGA-ONNX","image":["https://pbs.twimg.com/profile_images/905661894672883712/8nx8F7zi_400x400.jpg","https://www.cdotrends.com/sites/default/files/NUS.jpg"],"mainEntityOfPage":{"@type":"WebPage","@id":"https://joddiy.github.io/2020/05/14/SINGA-ONNX/"},"publisher":{"@type":"Organization","name":"Joddiy Zhang","sameAs":["https://github.com/joddiy","https://scholar.google.com/citations?user=KH-xv38AAAAJ&hl=en&oi=sra","https://www.linkedin.com/in/joddiyzhang/"],"image":"14108933.jpeg","logo":{"@type":"ImageObject","url":"14108933.jpeg"}},"url":"https://joddiy.github.io/2020/05/14/SINGA-ONNX/","keywords":"Deep Learning, Work, SINGA","thumbnailUrl":"https://pbs.twimg.com/profile_images/905661894672883712/8nx8F7zi_400x400.jpg"}</script>
+    <script type="application/ld+json">{"@context":"http://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"Joddiy Zhang","sameAs":["https://github.com/joddiy","https://scholar.google.com/citations?user=KH-xv38AAAAJ&hl=en&oi=sra","https://www.linkedin.com/in/joddiyzhang/"],"image":"14108933.jpeg"},"articleBody":"Conslusion firstGood news: \n\nThe ONNX can defines the loss and optimizer now within its format. However, current loss only have NegativeLogLikelihoodLoss and SoftmaxCrossEntropyLoss. Also, it only can store optimizers, only have Adagrad, Adam, Momentum(SGD with standard momentum). \n\nBad news:\n\nwe need to update the onnx to 1.7, which is released last week, may not be so stable. In this release, ONNX defines a comlicated node called GraphCall to specify which gradients should be computed and how to update the tensors by using these gradients. Since we will update the weights following the backward, so this part may not be useful for us.\n\nONNX Training Preview (TrainingInfoProto)In last week, the ONNX team has released a new version 1.7.0 which upgrade its opset version to 12. In this new rleases, they add a new feature called TrainingInfoProto. \nThis new feature defines something about training information. There are two main parts in it, initialization-step and training-algorithm-step.\ninitialization-stepinitialization-step means the developer can defines a initialization. For its type, the initialization is a formal ONNX graph. It doesn’t have input but seveal outputs. The developer can defines some nodes in this graph, such as RandomNormal or RandomUniform, and in another field called initialization_binding, the developer can assign these outputs to the specific tensors in the inference graph.\nThe current supported ramdom methods are: RandomNormal or RandomUniform.\ntraining-algorithm-steptraining-algorithm-step defines a field called algorithm. It defines a inference graph which represents a training algorithm’s step. Given required inputs, it computes outputs to update tensors in its own or in the main computaton graph. update_binding contains a key-value pair of strings to assign the outputs to some specific tensors.\nIn general, this graph contains loss node, gradient node, optimizer node, increment of iteration count, and some calls to the inference graph. The field algorithm.node is the only place the user can use GraphCall operator. \nLoss node\nNegativeLogLikelihoodLoss\nSoftmaxCrossEntropyLoss\n\nOptimizer node\nAdagrad\nAdam\nMomentum: SG with standard momentum\n\nGradient nodeThe gradient node actually only defines the necessary information to compute the gradient for all graph, for example, at the following graph, the gradient defines its inputs containing the xs(intermidate weights) and zs(input of the graph), and y(the output of the graph), and its outputs having dY/dW, dY/dZ whose order corresponds to the inputs in xs. \nIt doesn’t defines any logic about how to compute the dY/dW, dY/dZ.\n1234567891011121314W --&gt; Conv --&gt; H --&gt; Gemm --&gt; Y|      ^              ^|      |              ||      X              Z|      |              ||      |   .----------&#x27;|      |   |  (W/Z/X is the 1st/2nd/3rd input of Gradient as shown in|      |   |   &quot;xs&quot; followed by &quot;zs&quot;)|      v   v&#x27;---&gt; Gradient(xs=[&quot;W&quot;, &quot;Z&quot;], zs=[&quot;X&quot;], y=&quot;Y&quot;)       |   |       |   &#x27;-----------------------------------&gt; dY/dW (1st output of Gradient)       |       &#x27;---------------------------------------&gt; dY/dZ (2nd output of Gradient)\n\nGraphCall nodeThe GraphCall operator invokes a graph inside TrainingInfoProto’s algorithm field. The GraphCall inputs and outputs are bound to those of invoked graph by position.\nBased on the above inference graph, the GraphCall can use like this:\n123456789101112131415161718192021222324252627282930.-------- W (a global and mutable variable from|         |  the inference graph)|         ||   .-----&#x27;-----------.|   |                 ||   |                 v|   | .-- X_1 --&gt; GraphCall(graph_name=&quot;MyInferenceGraph&quot;)|   | |            |  ||   | |            |  ||   | |   Z_1 -----&#x27;  ||   | |    |          V|   | |    |         Y_1 ---&gt; Loss ---&gt; O|   | |    |                    ^|   | |    |                    ||   | `--. |                    C|   |    | |                    ||   |    | |   .----------------&#x27;|   |    | |   ||   |    v v   v|   `--&gt; Gradient(xs=[&quot;W&quot;], zs=[&quot;X_1&quot;, &quot;Z_1&quot;, &quot;C&quot;], y=&quot;O&quot;)|        ||        v|      dO_dW (gradient of W)      1 (a scalar one)|        |                        ||        V                        v|       Div &lt;--- T ------------&gt; Add ---&gt; T_new|        |    (T is the number of training iterations.|        |     T is also globally visible and mutable.)|        v`-----&gt; Sub ----&gt; W_new\n\nThe previous section’s inference graph is called by GraphCall(graph_name=&quot;MyInferenceGraph&quot;), and it uses a new batch of inputs (X_1, Z_1) to compute Y_1. \nGradient defines the graidents the graph should compute, finally, it gets W_new amd T_new.\nThe it uses the following update_binding to udpate the tensors:\n1update_binding: &#123;&quot;W&quot;: &quot;W_new&quot;, &quot;T&quot;: &quot;T_new&quot;&#125;\n\nAPI12345678910111213141516171819202122232425262728293031323334353637383940414243# handle ONNX def to_onnx(model):    return a onnx model class SONNXModel(Module):\tdef __init__(self, onnx_model):\t\tsinga_rep = sonnx.prepare(onnx_model, device=dev, batchsize=1)\t\tfor layer_name, layer in singa_rep.layers:\t\t\tself.__dict__[layer_name] = layer\t\t# store weights here as numpy\t\tfor weith_name, weight in singa_rep.weights:\t\t\tself.weights[weith_name] = weight\t\t# store layer info such as input and output name(only weights)\t\tfor layer_name, layer_info in singa_rep.layer_infos:\t\t\tself.layer_infos[layer_name] = layer_info    def forward(self, aux_output):        # run forward according to onnx graph         return the last output + aux_output    def compile(self)    \t# init weights    \tsuper.compile(self)    \t# set weights&#x27; value\t\tfor layer_name, layer in self.__dict__:\t\t\tinput_info, output_info = self.layer_infos[layer_name]\t\t\tfor input_name in input_info:\t\t\t\tlayer.set_weight(self.weights[input_name])class MyModel(SONNXModel):     def __init__(self, onnx):          super.__init__(onnx)          self.layer1 = Conv()          self.layer2 = Conv()     def forward(self, x):           x1, x2 = super.forward(x, aux_output)           x = self.layer1.forward(x2)           return self.layer2.forward(x1) + x      def train_one_batch(self, x, y):           y_ = self.forward(x)           ....\n\n\nsave and load: how to load onnx model, and how to save loss and sgd\n","dateCreated":"2020-05-14T16:54:44+08:00","dateModified":"2020-09-22T17:44:18+08:00","datePublished":"2020-05-14T16:54:44+08:00","description":"some upgrade about SINGA ONNX","headline":"SINGA-ONNX","image":["https://pbs.twimg.com/profile_images/905661894672883712/8nx8F7zi_400x400.jpg","https://www.cdotrends.com/sites/default/files/NUS.jpg"],"mainEntityOfPage":{"@type":"WebPage","@id":"http://joddiy.cc/2020/05/14/SINGA-ONNX/"},"publisher":{"@type":"Organization","name":"Joddiy Zhang","sameAs":["https://github.com/joddiy","https://scholar.google.com/citations?user=KH-xv38AAAAJ&hl=en&oi=sra","https://www.linkedin.com/in/joddiyzhang/"],"image":"14108933.jpeg","logo":{"@type":"ImageObject","url":"14108933.jpeg"}},"url":"http://joddiy.cc/2020/05/14/SINGA-ONNX/","keywords":"Deep Learning, Work, SINGA","thumbnailUrl":"https://pbs.twimg.com/profile_images/905661894672883712/8nx8F7zi_400x400.jpg"}</script>
     <meta name="description" content="some upgrade about SINGA ONNX">
 <meta property="og:type" content="blog">
 <meta property="og:title" content="SINGA-ONNX">
-<meta property="og:url" content="https://joddiy.github.io/2020/05/14/SINGA-ONNX/index.html">
+<meta property="og:url" content="http://joddiy.cc/2020/05/14/SINGA-ONNX/index.html">
 <meta property="og:site_name" content="Jz Blog">
 <meta property="og:description" content="some upgrade about SINGA ONNX">
 <meta property="og:locale" content="en_US">
@@ -33,7 +33,7 @@
         
     
     
-        <meta property="og:image" content="https://joddiy.github.io/assets/images/14108933.jpeg"/>
+        <meta property="og:image" content="http://joddiy.cc/assets/images/14108933.jpeg"/>
     
     
         <meta property="og:image" content="https://pbs.twimg.com/profile_images/905661894672883712/8nx8F7zi_400x400.jpg"/>
@@ -54,10 +54,6 @@
     
 
     
-        
-            
-<link rel="stylesheet" href="/assets/css/gitalk.css">
-
         
     
 </head>
@@ -118,7 +114,7 @@
                 </a>
                 <h4 class="sidebar-profile-name">Joddiy Zhang</h4>
                 
-                    <h5 class="sidebar-profile-bio"><p><a href="mailto:&#x6a;&#x6f;&#100;&#x64;&#x69;&#121;&#122;&#104;&#x61;&#110;&#x67;&#64;&#x67;&#x6d;&#x61;&#105;&#108;&#x2e;&#x63;&#111;&#x6d;">&#x6a;&#x6f;&#100;&#x64;&#x69;&#121;&#122;&#104;&#x61;&#110;&#x67;&#64;&#x67;&#x6d;&#x61;&#105;&#108;&#x2e;&#x63;&#111;&#x6d;</a></p>
+                    <h5 class="sidebar-profile-bio"><p><a href="mailto:&#x6a;&#x6f;&#100;&#x64;&#x69;&#x79;&#x7a;&#x68;&#97;&#110;&#103;&#x40;&#103;&#x6d;&#97;&#105;&#x6c;&#46;&#99;&#x6f;&#x6d;">&#x6a;&#x6f;&#100;&#x64;&#x69;&#x79;&#x7a;&#x68;&#97;&#110;&#103;&#x40;&#103;&#x6d;&#97;&#105;&#x6c;&#46;&#99;&#x6f;&#x6d;</a></p>
 </h5>
                 
             </div>
@@ -403,7 +399,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.github.io/2020/05/14/SINGA-ONNX/"
+                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=http://joddiy.cc/2020/05/14/SINGA-ONNX/"
                     title="Share on Facebook"
                     aria-label="Share on Facebook"
                 >
@@ -416,7 +412,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://twitter.com/intent/tweet?text=https://joddiy.github.io/2020/05/14/SINGA-ONNX/"
+                    target="new" href="https://twitter.com/intent/tweet?text=http://joddiy.cc/2020/05/14/SINGA-ONNX/"
                     title="Share on Twitter"
                     aria-label="Share on Twitter"
                 >
@@ -429,7 +425,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://plus.google.com/share?url=https://joddiy.github.io/2020/05/14/SINGA-ONNX/"
+                    target="new" href="https://plus.google.com/share?url=http://joddiy.cc/2020/05/14/SINGA-ONNX/"
                     title="Share on Google+"
                     aria-label="Share on Google+"
                 >
@@ -438,16 +434,6 @@
             </li>
         
         
-            
-                <li class="post-action">
-                    <a
-                        class="post-action-btn btn btn--default"
-                        href="#gitalk"
-                        aria-label="Leave a comment"
-                    >
-                        <i class="fa fa-comment"></i>
-                    </a>
-                </li>
             
         
         <li class="post-action">
@@ -463,9 +449,6 @@
 
         
         
-            
-                <div id="gitalk"></div>
-
             
         
     </div>
@@ -531,7 +514,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.github.io/2020/05/14/SINGA-ONNX/"
+                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=http://joddiy.cc/2020/05/14/SINGA-ONNX/"
                     title="Share on Facebook"
                     aria-label="Share on Facebook"
                 >
@@ -544,7 +527,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://twitter.com/intent/tweet?text=https://joddiy.github.io/2020/05/14/SINGA-ONNX/"
+                    target="new" href="https://twitter.com/intent/tweet?text=http://joddiy.cc/2020/05/14/SINGA-ONNX/"
                     title="Share on Twitter"
                     aria-label="Share on Twitter"
                 >
@@ -557,7 +540,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://plus.google.com/share?url=https://joddiy.github.io/2020/05/14/SINGA-ONNX/"
+                    target="new" href="https://plus.google.com/share?url=http://joddiy.cc/2020/05/14/SINGA-ONNX/"
                     title="Share on Google+"
                     aria-label="Share on Google+"
                 >
@@ -566,16 +549,6 @@
             </li>
         
         
-            
-                <li class="post-action">
-                    <a
-                        class="post-action-btn btn btn--default"
-                        href="#gitalk"
-                        aria-label="Leave a comment"
-                    >
-                        <i class="fa fa-comment"></i>
-                    </a>
-                </li>
             
         
         <li class="post-action">
@@ -601,7 +574,7 @@
                     <a
                         class="share-option-btn"
                         target="new"
-                        href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.github.io/2020/05/14/SINGA-ONNX/"
+                        href="https://www.facebook.com/sharer/sharer.php?u=http://joddiy.cc/2020/05/14/SINGA-ONNX/"
                         aria-label="Share on Facebook"
                     >
                         <i class="fab fa-facebook" aria-hidden="true"></i><span>Share on Facebook</span>
@@ -614,7 +587,7 @@
                     <a
                         class="share-option-btn"
                         target="new"
-                        href="https://twitter.com/intent/tweet?text=https://joddiy.github.io/2020/05/14/SINGA-ONNX/"
+                        href="https://twitter.com/intent/tweet?text=http://joddiy.cc/2020/05/14/SINGA-ONNX/"
                         aria-label="Share on Twitter"
                     >
                         <i class="fab fa-twitter" aria-hidden="true"></i><span>Share on Twitter</span>
@@ -627,7 +600,7 @@
                     <a
                         class="share-option-btn"
                         target="new"
-                        href="https://plus.google.com/share?url=https://joddiy.github.io/2020/05/14/SINGA-ONNX/"
+                        href="https://plus.google.com/share?url=http://joddiy.cc/2020/05/14/SINGA-ONNX/"
                         aria-label="Share on Google+"
                     >
                         <i class="fab fa-google-plus" aria-hidden="true"></i><span>Share on Google+</span>
@@ -657,7 +630,7 @@
         
             <h4 id="about-card-name">Joddiy Zhang</h4>
         
-            <div id="about-card-bio"><p><a href="mailto:&#x6a;&#111;&#100;&#x64;&#x69;&#121;&#x7a;&#104;&#97;&#x6e;&#103;&#x40;&#x67;&#x6d;&#97;&#105;&#x6c;&#x2e;&#x63;&#x6f;&#109;">&#x6a;&#111;&#100;&#x64;&#x69;&#121;&#x7a;&#104;&#97;&#x6e;&#103;&#x40;&#x67;&#x6d;&#97;&#105;&#x6c;&#x2e;&#x63;&#x6f;&#109;</a></p>
+            <div id="about-card-bio"><p><a href="mailto:&#106;&#111;&#100;&#100;&#105;&#121;&#x7a;&#104;&#97;&#110;&#103;&#x40;&#103;&#x6d;&#x61;&#105;&#108;&#46;&#99;&#111;&#x6d;">&#106;&#111;&#100;&#100;&#105;&#121;&#x7a;&#104;&#97;&#110;&#103;&#x40;&#103;&#x6d;&#x61;&#105;&#108;&#46;&#99;&#111;&#x6d;</a></p>
 </div>
         
         
@@ -688,23 +661,6 @@
 <!--SCRIPTS END-->
 
 
-    
-        
-<script src="/assets/js/gitalk.js"></script>
-
-        <script type="text/javascript">
-          (function() {
-            new Gitalk({
-              clientID: 'bee9685b2dc9739b6bd5',
-              clientSecret: 'a0c683f383a94fae6d021ab932f37f7e56899410',
-              repo: 'joddiy.github.io',
-              owner: 'joddiy',
-              admin: ['joddiy'],
-              id: '2020/05/14/SINGA-ONNX/',
-              ...{"language":"en","perPage":10,"distractionFreeMode":false,"enableHotKey":true,"pagerDirection":"first"}
-            }).render('gitalk')
-          })()
-        </script>
     
 
 

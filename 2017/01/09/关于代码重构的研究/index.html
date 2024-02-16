@@ -10,14 +10,14 @@
     <meta name="author" content="Joddiy Zhang">
     
     
-        <link rel="icon" href="https://joddiy.github.io/assets/images/favicon.ico">
+        <link rel="icon" href="http://joddiy.cc/assets/images/favicon.ico">
     
     
-    <script type="application/ld+json">{"@context":"http://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"Joddiy Zhang","sameAs":["https://github.com/joddiy","https://scholar.google.com/citations?user=KH-xv38AAAAJ&hl=en&oi=sra","https://www.linkedin.com/in/joddiyzhang/"],"image":"14108933.jpeg"},"articleBody":"前言公司在年后要举办一次“代码质量月”的活动，由我负责第三部分即结合实例方面的讲解，实例内容主要来自于 ETL 开发中的几次重构，以及我应该会抽时间研究和学习一下《改善既有代码的设计》这本书，所有的进度和内容都会记录在这份文档里。\n提纲;\n\n灵活使用设计模式 讲解一些常用设计模式的使用场景及前后效果对比\n科学使用存储软件 主要讲解 PHP 如何配合数据库（考虑加上 Redis ）优化查询、变更、删除方面的内容\n实际项目中的一些最佳实践 这部分考虑先看完《改善既有代码的设计》这本书，然后再次重构 ETL 后进行总结\n\n读书笔记何谓重构\n重构，使用一系列手法，在不改变软件可观察行为的前提下，调整其结构。这点可能跟我要讲的内容有冲突\n开发和重构是两部分工作，开发时只增加新功能确保通过测试通过，重构时只修改程序结构使通过相同测试。\n\n为何重构\n改进软件设计\n更容易理解\n查找 Bug\n提高速度，良好的设计是快速开发的根本\n\n何时重构\n添加功能时\n修补错误时\n复审代码时 欠缺之处\n\n糟糕的程序\n难以阅读\n逻辑重复\n添加新行为会影响已有代码\n带有复杂条件逻辑的程序\n\n重构的难题\n数据库\n程序与数据库结构耦合\n数据库结构变更导致迁移数据\n\n\n接口\n接口重命名，同时维护两个接口，使旧接口调用新接口，对旧接口 Deprecation\n\n\n\n参考资料\nDesignPatternsPHP \nRefactoring Patterns \nRefactoring Good Practices\nTop 15+ Best Practices for Writing Super Readable Code\n\n","dateCreated":"2017-01-09T16:10:51+08:00","dateModified":"2020-05-11T15:09:10+08:00","datePublished":"2017-01-09T16:10:51+08:00","description":"Study notes for code reconstruction","headline":"关于代码重构的研究","image":["https://pbs.twimg.com/profile_images/706844277058351105/yGghsaRi_400x400.jpg","https://blog.parasoft.com/hubfs/update-legacy-code.png"],"mainEntityOfPage":{"@type":"WebPage","@id":"https://joddiy.github.io/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"},"publisher":{"@type":"Organization","name":"Joddiy Zhang","sameAs":["https://github.com/joddiy","https://scholar.google.com/citations?user=KH-xv38AAAAJ&hl=en&oi=sra","https://www.linkedin.com/in/joddiyzhang/"],"image":"14108933.jpeg","logo":{"@type":"ImageObject","url":"14108933.jpeg"}},"url":"https://joddiy.github.io/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/","keywords":"研究向, 设计风格","thumbnailUrl":"https://pbs.twimg.com/profile_images/706844277058351105/yGghsaRi_400x400.jpg"}</script>
+    <script type="application/ld+json">{"@context":"http://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"Joddiy Zhang","sameAs":["https://github.com/joddiy","https://scholar.google.com/citations?user=KH-xv38AAAAJ&hl=en&oi=sra","https://www.linkedin.com/in/joddiyzhang/"],"image":"14108933.jpeg"},"articleBody":"前言公司在年后要举办一次“代码质量月”的活动，由我负责第三部分即结合实例方面的讲解，实例内容主要来自于 ETL 开发中的几次重构，以及我应该会抽时间研究和学习一下《改善既有代码的设计》这本书，所有的进度和内容都会记录在这份文档里。\n提纲;\n\n灵活使用设计模式 讲解一些常用设计模式的使用场景及前后效果对比\n科学使用存储软件 主要讲解 PHP 如何配合数据库（考虑加上 Redis ）优化查询、变更、删除方面的内容\n实际项目中的一些最佳实践 这部分考虑先看完《改善既有代码的设计》这本书，然后再次重构 ETL 后进行总结\n\n读书笔记何谓重构\n重构，使用一系列手法，在不改变软件可观察行为的前提下，调整其结构。这点可能跟我要讲的内容有冲突\n开发和重构是两部分工作，开发时只增加新功能确保通过测试通过，重构时只修改程序结构使通过相同测试。\n\n为何重构\n改进软件设计\n更容易理解\n查找 Bug\n提高速度，良好的设计是快速开发的根本\n\n何时重构\n添加功能时\n修补错误时\n复审代码时 欠缺之处\n\n糟糕的程序\n难以阅读\n逻辑重复\n添加新行为会影响已有代码\n带有复杂条件逻辑的程序\n\n重构的难题\n数据库\n程序与数据库结构耦合\n数据库结构变更导致迁移数据\n\n\n接口\n接口重命名，同时维护两个接口，使旧接口调用新接口，对旧接口 Deprecation\n\n\n\n参考资料\nDesignPatternsPHP \nRefactoring Patterns \nRefactoring Good Practices\nTop 15+ Best Practices for Writing Super Readable Code\n\n","dateCreated":"2017-01-09T16:10:51+08:00","dateModified":"2020-05-11T15:09:10+08:00","datePublished":"2017-01-09T16:10:51+08:00","description":"Study notes for code reconstruction","headline":"关于代码重构的研究","image":["https://pbs.twimg.com/profile_images/706844277058351105/yGghsaRi_400x400.jpg","https://blog.parasoft.com/hubfs/update-legacy-code.png"],"mainEntityOfPage":{"@type":"WebPage","@id":"http://joddiy.cc/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"},"publisher":{"@type":"Organization","name":"Joddiy Zhang","sameAs":["https://github.com/joddiy","https://scholar.google.com/citations?user=KH-xv38AAAAJ&hl=en&oi=sra","https://www.linkedin.com/in/joddiyzhang/"],"image":"14108933.jpeg","logo":{"@type":"ImageObject","url":"14108933.jpeg"}},"url":"http://joddiy.cc/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/","keywords":"研究向, 设计风格","thumbnailUrl":"https://pbs.twimg.com/profile_images/706844277058351105/yGghsaRi_400x400.jpg"}</script>
     <meta name="description" content="Study notes for code reconstruction">
 <meta property="og:type" content="blog">
 <meta property="og:title" content="关于代码重构的研究">
-<meta property="og:url" content="https://joddiy.github.io/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/index.html">
+<meta property="og:url" content="http://joddiy.cc/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/index.html">
 <meta property="og:site_name" content="Jz Blog">
 <meta property="og:description" content="Study notes for code reconstruction">
 <meta property="og:locale" content="en_US">
@@ -32,7 +32,7 @@
         
     
     
-        <meta property="og:image" content="https://joddiy.github.io/assets/images/14108933.jpeg"/>
+        <meta property="og:image" content="http://joddiy.cc/assets/images/14108933.jpeg"/>
     
     
         <meta property="og:image" content="https://pbs.twimg.com/profile_images/706844277058351105/yGghsaRi_400x400.jpg"/>
@@ -53,10 +53,6 @@
     
 
     
-        
-            
-<link rel="stylesheet" href="/assets/css/gitalk.css">
-
         
     
 </head>
@@ -117,7 +113,7 @@
                 </a>
                 <h4 class="sidebar-profile-name">Joddiy Zhang</h4>
                 
-                    <h5 class="sidebar-profile-bio"><p><a href="mailto:&#x6a;&#x6f;&#x64;&#100;&#x69;&#121;&#122;&#x68;&#x61;&#110;&#x67;&#x40;&#x67;&#x6d;&#x61;&#x69;&#x6c;&#46;&#99;&#x6f;&#x6d;">&#x6a;&#x6f;&#x64;&#100;&#x69;&#121;&#122;&#x68;&#x61;&#110;&#x67;&#x40;&#x67;&#x6d;&#x61;&#x69;&#x6c;&#46;&#99;&#x6f;&#x6d;</a></p>
+                    <h5 class="sidebar-profile-bio"><p><a href="mailto:&#106;&#x6f;&#x64;&#100;&#x69;&#x79;&#x7a;&#x68;&#97;&#110;&#x67;&#64;&#103;&#x6d;&#97;&#x69;&#x6c;&#46;&#x63;&#x6f;&#x6d;">&#106;&#x6f;&#x64;&#100;&#x69;&#x79;&#x7a;&#x68;&#97;&#110;&#x67;&#64;&#103;&#x6d;&#97;&#x69;&#x6c;&#46;&#x63;&#x6f;&#x6d;</a></p>
 </h5>
                 
             </div>
@@ -404,7 +400,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.github.io/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"
+                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=http://joddiy.cc/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"
                     title="Share on Facebook"
                     aria-label="Share on Facebook"
                 >
@@ -417,7 +413,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://twitter.com/intent/tweet?text=https://joddiy.github.io/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"
+                    target="new" href="https://twitter.com/intent/tweet?text=http://joddiy.cc/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"
                     title="Share on Twitter"
                     aria-label="Share on Twitter"
                 >
@@ -430,7 +426,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://plus.google.com/share?url=https://joddiy.github.io/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"
+                    target="new" href="https://plus.google.com/share?url=http://joddiy.cc/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"
                     title="Share on Google+"
                     aria-label="Share on Google+"
                 >
@@ -439,16 +435,6 @@
             </li>
         
         
-            
-                <li class="post-action">
-                    <a
-                        class="post-action-btn btn btn--default"
-                        href="#gitalk"
-                        aria-label="Leave a comment"
-                    >
-                        <i class="fa fa-comment"></i>
-                    </a>
-                </li>
             
         
         <li class="post-action">
@@ -464,9 +450,6 @@
 
         
         
-            
-                <div id="gitalk"></div>
-
             
         
     </div>
@@ -529,7 +512,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.github.io/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"
+                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=http://joddiy.cc/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"
                     title="Share on Facebook"
                     aria-label="Share on Facebook"
                 >
@@ -542,7 +525,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://twitter.com/intent/tweet?text=https://joddiy.github.io/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"
+                    target="new" href="https://twitter.com/intent/tweet?text=http://joddiy.cc/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"
                     title="Share on Twitter"
                     aria-label="Share on Twitter"
                 >
@@ -555,7 +538,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://plus.google.com/share?url=https://joddiy.github.io/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"
+                    target="new" href="https://plus.google.com/share?url=http://joddiy.cc/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"
                     title="Share on Google+"
                     aria-label="Share on Google+"
                 >
@@ -564,16 +547,6 @@
             </li>
         
         
-            
-                <li class="post-action">
-                    <a
-                        class="post-action-btn btn btn--default"
-                        href="#gitalk"
-                        aria-label="Leave a comment"
-                    >
-                        <i class="fa fa-comment"></i>
-                    </a>
-                </li>
             
         
         <li class="post-action">
@@ -599,7 +572,7 @@
                     <a
                         class="share-option-btn"
                         target="new"
-                        href="https://www.facebook.com/sharer/sharer.php?u=https://joddiy.github.io/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"
+                        href="https://www.facebook.com/sharer/sharer.php?u=http://joddiy.cc/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"
                         aria-label="Share on Facebook"
                     >
                         <i class="fab fa-facebook" aria-hidden="true"></i><span>Share on Facebook</span>
@@ -612,7 +585,7 @@
                     <a
                         class="share-option-btn"
                         target="new"
-                        href="https://twitter.com/intent/tweet?text=https://joddiy.github.io/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"
+                        href="https://twitter.com/intent/tweet?text=http://joddiy.cc/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"
                         aria-label="Share on Twitter"
                     >
                         <i class="fab fa-twitter" aria-hidden="true"></i><span>Share on Twitter</span>
@@ -625,7 +598,7 @@
                     <a
                         class="share-option-btn"
                         target="new"
-                        href="https://plus.google.com/share?url=https://joddiy.github.io/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"
+                        href="https://plus.google.com/share?url=http://joddiy.cc/2017/01/09/%E5%85%B3%E4%BA%8E%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84%E7%9A%84%E7%A0%94%E7%A9%B6/"
                         aria-label="Share on Google+"
                     >
                         <i class="fab fa-google-plus" aria-hidden="true"></i><span>Share on Google+</span>
@@ -655,7 +628,7 @@
         
             <h4 id="about-card-name">Joddiy Zhang</h4>
         
-            <div id="about-card-bio"><p><a href="mailto:&#x6a;&#111;&#100;&#x64;&#x69;&#121;&#x7a;&#104;&#97;&#x6e;&#103;&#x40;&#x67;&#x6d;&#97;&#105;&#x6c;&#x2e;&#x63;&#x6f;&#109;">&#x6a;&#111;&#100;&#x64;&#x69;&#121;&#x7a;&#104;&#97;&#x6e;&#103;&#x40;&#x67;&#x6d;&#97;&#105;&#x6c;&#x2e;&#x63;&#x6f;&#109;</a></p>
+            <div id="about-card-bio"><p><a href="mailto:&#106;&#111;&#100;&#100;&#105;&#121;&#x7a;&#104;&#97;&#110;&#103;&#x40;&#103;&#x6d;&#x61;&#105;&#108;&#46;&#99;&#111;&#x6d;">&#106;&#111;&#100;&#100;&#105;&#121;&#x7a;&#104;&#97;&#110;&#103;&#x40;&#103;&#x6d;&#x61;&#105;&#108;&#46;&#99;&#111;&#x6d;</a></p>
 </div>
         
         
@@ -686,23 +659,6 @@
 <!--SCRIPTS END-->
 
 
-    
-        
-<script src="/assets/js/gitalk.js"></script>
-
-        <script type="text/javascript">
-          (function() {
-            new Gitalk({
-              clientID: 'bee9685b2dc9739b6bd5',
-              clientSecret: 'a0c683f383a94fae6d021ab932f37f7e56899410',
-              repo: 'joddiy.github.io',
-              owner: 'joddiy',
-              admin: ['joddiy'],
-              id: '2017/01/09/关于代码重构的研究/',
-              ...{"language":"en","perPage":10,"distractionFreeMode":false,"enableHotKey":true,"pagerDirection":"first"}
-            }).render('gitalk')
-          })()
-        </script>
     
 
 
